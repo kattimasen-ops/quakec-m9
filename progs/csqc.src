@@ -31,7 +31,7 @@ menu_coop.qc         // Co-Op Menu
 menu_loby.qc         // Lobby Menu
 menu_bios.qc         // Character Bios
 
-../source/menu/main.qc // <-- NEU: Definiert m_toggle und m_init
+../source/menu/main.qc // Definiert m_toggle und m_init
 
 sound_enhanced.qc
 weapon_stats.qc
@@ -44,4 +44,4 @@ particles.qc
 chasecam.qc
 zombie.qc
 main.qc
-#endlist 
+#endlist
