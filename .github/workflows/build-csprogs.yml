@@ -1,4 +1,4 @@
-name: Build Custom NZP csprogs.dat (Fast)
+name: Generate Custom NZP csprogs.dat (Fast)
 
 on:
   push:
