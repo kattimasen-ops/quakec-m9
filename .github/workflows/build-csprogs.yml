@@ -1,4 +1,4 @@
-name: Baue Custom NZP csprogs.dat (Fast)
+name: Forge Custom NZP csprogs.dat (Fast)
 
 on:
   push:
@@ -10,47 +10,50 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Repository auschecken
       - name: Checkout your fork
         uses: actions/checkout@v4
 
+      # 2. Python-Abhängigkeiten installieren
       - name: Install Python Dependencies
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install pandas fastcrc colorama
 
+      # 3. Patches anwenden (Menü- und Performance-Fixes)
       - name: Apply Patches
         run: |
           python3 scripts/apply_nzp_m9_patches.py
 
+      # 4. FTE-Erweiterungen richtig einbinden
       - name: Setup FTE Extensions
         run: |
+          # Entferne die inkompatible, heruntergeladene Datei, falls sie existiert
           rm -f progs/fteextensions.qc
+          
+          # Binde die repository-eigene fte.qc als erste Datei ein
           if ! grep -q '#include "client/defs/fte.qc"' progs/csqc.src; then
             sed -i '1i #include "client/defs/fte.qc"' progs/csqc.src
           fi
           echo "Die repository-eigene fte.qc wird verwendet."
 
-      - name: Skip SSQC Compile
-        run: |
-          sed -i '/compile_progs "ssqc"/d' tools/qc-compiler-gnu.sh
-          
-          if ! grep -q 'compile_progs "csqc"' tools/qc-compiler-gnu.sh; then
-            sed -i '/setup;/a \	compile_progs "csqc" "Vril CSQC" "-O3 -Ono-compound_jumps ${TEST_FLAG} -Wall"' tools/qc-compiler-gnu.sh
-          fi
-          
-          chmod +x tools/qc-compiler-gnu.sh
-          chmod +x bin/fteqcc-cli-lin
-          
-          echo "SSQC wird übersprungen. CSQC wird gebaut:"
-          grep compile_progs tools/qc-compiler-gnu.sh
-
+      # 5. Direkt kompilieren (umgeht das fehlerhafte Skript)
       - name: Compile CSQC
         run: |
-          ./tools/qc-compiler-gnu.sh
+          # Ausführrechte für den Compiler sicherstellen
+          chmod +x bin/fteqcc-cli-lin
           
-          echo "=== Erzeugte .dat-Dateien ==="
+          echo "=== Generiere Hash-Tabelle ==="
+          python3 bin/qc_hash_generator.py -i tools/asset_conversion_table.csv -o source/server/hash_table.qc
+          
+          echo "=== Kompiliere CSQC (Manuell) ==="
+          # Direkter Aufruf mit -o csprogs.dat, damit die Datei exakt so heißt
+          bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/csqc.src -o csprogs.dat
+          
+          echo "=== Erzeugte .dat-Dateien im Workspace ==="
           find . -name "*.dat" -ls
 
+      # 6. Artefakt hochladen
       - name: Upload Dat Files
         uses: actions/upload-artifact@v4
         with:
