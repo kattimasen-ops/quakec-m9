@@ -14,14 +14,20 @@ draw.qc
 
 sui_sys.qc
 m_menu.qc
-menu_paus.qc     // Pause Menu
-menu_opts.qc     // Options Menu
-menu_vide.qc     // Video Menu
-menu_audi.qc     // Audio Menu
-menu_ctrl.qc     // Control Menu
-menu_gpad.qc     // Gamepad Menu
-menu_bind.qc     // Bindings Menu
-menu_aces.qc     // Accessibility Menu
+menu_main.qc         // Hauptmenü
+menu_maps.qc         // Kartenauswahl
+menu_paus.qc         // Pause Menu
+menu_opts.qc         // Options Menu
+menu_vide.qc         // Video Menu
+menu_audi.qc         // Audio Menu
+menu_ctrl.qc         // Control Menu
+menu_gpad.qc         // Gamepad Menu
+menu_bind.qc         // Bindings Menu
+menu_aces.qc         // Accessibility Menu
+menu_coop.qc         // Co-Op Menu (Wichtig für Serverbrowser!)
+menu_loby.qc         // Lobby Menu
+menu_gamesettings.qc // Game Settings
+menu_bios.qc         // Character Bios
 
 sound_enhanced.qc
 weapon_stats.qc
