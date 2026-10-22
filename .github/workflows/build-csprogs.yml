@@ -1,4 +1,4 @@
-name: Build Custom NZP csprogs.dat (Fast)
+name: Create Custom NZP csprogs.dat (Fast)
 
 on:
   push:
@@ -28,7 +28,7 @@ jobs:
           cd /workspace/repos/quakec
           echo "Aktueller Commit: $(git rev-parse HEAD)"
 
-      # 3. Patches anwenden (dein Skript wird gefunden, weil Checkout funktioniert hat)
+      # 3. Patches anwenden
       - name: Apply Patches
         run: |
           cd /workspace/repos/quakec
@@ -59,13 +59,22 @@ jobs:
             sed -i '/setup;/a \	compile_progs "csqc" "Vril CSQC" "-O3 -Ono-compound_jumps ${TEST_FLAG} -Wall"' tools/qc-compiler-gnu.sh
           fi
           
+          # Sicherstellen, dass das Skript ausführbar ist
+          chmod +x tools/qc-compiler-gnu.sh
+          
           echo "SSQC wird übersprungen. CSQC wird gebaut:"
           grep compile_progs tools/qc-compiler-gnu.sh
 
-      # 6. Kompilieren
+      # 6. Kompilieren (inkl. Installation der Python-Abhängigkeiten)
       - name: Compile CSQC
         run: |
           cd /workspace/repos/quakec
+          
+          echo "=== Installiere Python-Abhängigkeiten für den Hash-Generator ==="
+          # Installiert pandas, fastcrc und colorama (benötigt für qc_hash_generator.py)
+          pip3 install pandas fastcrc colorama --break-system-packages || pip3 install pandas fastcrc colorama
+          
+          echo "=== Starte Kompilierung ==="
           ./tools/qc-compiler-gnu.sh
 
       # 7. Artefakt hochladen
@@ -73,5 +82,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: nzp-csprogs-patched
-          path: /workspace/repos/quakec/build/standard/csprogs.dat
+          path: /workspace/repos/quakec/**/csprogs.dat
           if-no-files-found: error
