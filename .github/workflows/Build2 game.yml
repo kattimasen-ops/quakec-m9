@@ -32,35 +32,46 @@ jobs:
           GITHUB_REPO: ${{ github.repository }}
         run: |
           cd /workspace/repos/quakec
-          # Ändere die Remote-URL auf DEINEN Fork
           git remote set-url origin https://github.com/${GITHUB_REPO}.git
           git fetch origin main
           git checkout --detach "$QUAKEC_SHA"
           echo "QuakeC commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
 
-      # 4. Patches anwenden & das Build-Skript für CSQC anpassen
-      - name: Apply Patches & Enable CSQC
+      # 4. FTE-Erweiterungen herunterladen und einbinden
+      - name: Setup FTE Extensions
         run: |
           cd /workspace/repos/quakec
           
-          # Kopiere dein Patch-Skript in das Build-Verzeichnis und führe es aus
+          # Lade die offizielle fteextensions.qc herunter
+          curl -L -o progs/fteextensions.qc https://raw.githubusercontent.com/fte-team/fteqw/master/quakec/fteextensions.qc
+          
+          # Füge die Include-Anweisung ganz oben in die .src-Dateien ein
+          if ! grep -q '#include "fteextensions.qc"' progs/ssqc.src; then
+            sed -i '1i #include "fteextensions.qc"' progs/ssqc.src
+          fi
+          if ! grep -q '#include "fteextensions.qc"' progs/csqc.src; then
+            sed -i '1i #include "fteextensions.qc"' progs/csqc.src
+          fi
+          
+          echo "FTE Extensions wurden erfolgreich eingebunden."
+
+      # 5. Patches anwenden
+      - name: Apply Patches
+        run: |
+          cd /workspace/repos/quakec
           mkdir -p scripts
           cp $GITHUB_WORKSPACE/scripts/apply_nzp_m9_patches.py scripts/
           python3 scripts/apply_nzp_m9_patches.py
-          
-          # Zwinge das Build-Skript, auch den Client-Code (csqc) zu bauen
-          sed -i '/compile_progs "ssqc"/a \	compile_progs "csqc" "Vril CSQC" "-O3 -Ono-compound_jumps ${TEST_FLAG} -Wall"' tools/qc-compiler-gnu.sh
 
-      # 5. Kompilieren (nutzt das offizielle Toolbox-Skript)
+      # 6. Kompilieren (nutzt das offizielle Toolbox-Skript)
       - name: Compile
         run: /entrypoint.sh build-quakec
 
-      # 6. Die fertige csprogs.dat hochladen
+      # 7. Die fertige csprogs.dat hochladen
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: nzp-csprogs-patched
-          # Sucht die .dat Dateien im build-Ordner und lädt sie hoch
           path: |
             /workspace/repos/quakec/build/standard/csprogs.dat
             /workspace/repos/quakec/build/standard/progs.dat
