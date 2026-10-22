@@ -1,4 +1,4 @@
-name: Build NZP csprogs.dat (Patched QuakeC)
+name: Build Custom NZP csprogs.dat
 
 on:
   push:
@@ -6,78 +6,62 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-quakec:
+  Compile-QC:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/nzp-team/toolbox:main
+    defaults:
+      run:
+        shell: bash
     steps:
-      # ── 1. Dein geforktes QuakeC-Repository auschecken ────────────────
-      - name: Checkout kattimasen-ops/quakec-m9
+      # 1. Dein geforktes Repository auschecken
+      - name: Checkout your fork
         uses: actions/checkout@v4
-        with:
-          repository: kattimasen-ops/quakec-m9
-          ref: main
-          path: quakec-m9
 
-      # ── 2. Patches anwenden ─────────────────────────────────────────
-      - name: Apply NZP-M9 patches
+      # 2. Das offizielle Toolbox-Setup laden
+      - name: Toolbox Fetch
+        env:
+          TOOLBOX_HOST_OS: Linux
+          TOOLBOX_HOST_ARCH: x86_64
+        run: /entrypoint.sh fetch
+
+      # 3. Deinen Commit in das Toolbox-Verzeichnis zwingen
+      - name: Select your commit
+        env:
+          QUAKEC_SHA: ${{ github.sha }}
+          GITHUB_REPO: ${{ github.repository }}
         run: |
-          set -euo pipefail
-          cd quakec-m9
-          if [ ! -f scripts/apply_nzp_m9_patches.py ]; then
-            echo "FEHLER: scripts/apply_nzp_m9_patches.py fehlt im Repo."
-            exit 1
-          fi
+          cd /workspace/repos/quakec
+          # Ändere die Remote-URL auf DEINEN Fork
+          git remote set-url origin https://github.com/${GITHUB_REPO}.git
+          git fetch origin main
+          git checkout --detach "$QUAKEC_SHA"
+          echo "QuakeC commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+
+      # 4. Patches anwenden & das Build-Skript für CSQC anpassen
+      - name: Apply Patches & Enable CSQC
+        run: |
+          cd /workspace/repos/quakec
+          
+          # Kopiere dein Patch-Skript in das Build-Verzeichnis und führe es aus
+          mkdir -p scripts
+          cp $GITHUB_WORKSPACE/scripts/apply_nzp_m9_patches.py scripts/
           python3 scripts/apply_nzp_m9_patches.py
+          
+          # Zwinge das Build-Skript, auch den Client-Code (csqc) zu bauen
+          sed -i '/compile_progs "ssqc"/a \	compile_progs "csqc" "Vril CSQC" "-O3 -Ono-compound_jumps ${TEST_FLAG} -Wall"' tools/qc-compiler-gnu.sh
 
-      # ── 3. QuakeC kompilieren (nur CSQC für csprogs.dat) ───────────
-      - name: Compile QuakeC (fteqcc)
-        run: |
-          set -euo pipefail
-          docker run --rm -v "${{ github.workspace }}:/workspace" -w /workspace/quakec-m9 \
-            ubuntu:20.04 bash -c '
-              set -euo pipefail
-              export DEBIAN_FRONTEND=noninteractive
+      # 5. Kompilieren (nutzt das offizielle Toolbox-Skript)
+      - name: Compile
+        run: /entrypoint.sh build-quakec
 
-              apt-get update && apt-get install -y --no-install-recommends \
-                python3 python3-pip build-essential git ca-certificates
-
-              echo "=== Installiere Python-Abhängigkeiten ==="
-              pip3 install fastcrc colorama panda3d
-
-              echo "=== Generiere Hash-Tabelle ==="
-              python3 bin/qc_hash_generator.py -i tools/asset_conversion_table.csv -o source/server/hash_table.qc
-
-              FTEQCC_BIN="bin/fteqcc-cli-lin"
-              if [ ! -x "${FTEQCC_BIN}" ]; then
-                echo "FEHLER: ${FTEQCC_BIN} nicht gefunden."
-                ls -la bin/ || true
-                exit 1
-              fi
-
-              mkdir -p build
-
-              # ---------------------------------------------------------
-              # HIER WIRD NUR CSQC KOMPILIERT, UM NUR csprogs.dat ZU BAUEN
-              # ---------------------------------------------------------
-              echo "=== Kompiliere CSQC (Client) ==="
-              if [ -f "progs/csqc.src" ]; then
-                ${FTEQCC_BIN} -O3 -Ono-compound_jumps -Wall -srcfile progs/csqc.src
-              elif [ -f "progs/csprogs.src" ]; then
-                ${FTEQCC_BIN} -O3 -Ono-compound_jumps -Wall -srcfile progs/csprogs.src
-              else
-                echo "FEHLER: Keine CSQC .src Datei gefunden!"
-                find . -name "*.src"
-                exit 1
-              fi
-
-              echo ""
-              echo "=== Ergebnis: erzeugte .dat-Dateien ==="
-              find . -maxdepth 4 -name "*.dat" -exec ls -la {} \;
-            '
-
-      # ── 4. Nur csprogs.dat als Artefakt hochladen ───────────────────
-      - name: Upload csprogs.dat
+      # 6. Die fertige csprogs.dat hochladen
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: nzp-csprogs-patched
-          path: quakec-m9/build/**/csprogs.dat
+          # Sucht die .dat Dateien im build-Ordner und lädt sie hoch
+          path: |
+            /workspace/repos/quakec/build/standard/csprogs.dat
+            /workspace/repos/quakec/build/standard/progs.dat
           if-no-files-found: error
