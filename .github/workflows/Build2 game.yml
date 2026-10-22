@@ -1,4 +1,4 @@
-name: Build NZP PortMaster Engine (RK3326 / ArkOS)
+name: Build NZP csprogs.dat (Patched QuakeC)
 
 on:
   push:
@@ -6,102 +6,36 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-portmaster-package:
+  build-quakec:
     runs-on: ubuntu-latest
     steps:
-      # ── 1. Repositories auschecken ──────────────────────────────────
-      - name: Checkout nzp-team/fteqw Engine Repository
+      # ── 1. QuakeC-Repository auschecken ──────────────────────────────
+      - name: Checkout nzp-team/quakec
         uses: actions/checkout@v4
         with:
-          repository: nzp-team/fteqw
-          ref: master
-          submodules: recursive
-          fetch-depth: 0
-          path: fteqw
-
-      - name: Checkout kattimasen-ops/quakec-m9 Game-Code
-        uses: actions/checkout@v4
-        with:
-          repository: kattimasen-ops/quakec-m9
-          ref: main # Falls dein Branch "master" heisst, hier anpassen
-          path: quakec-m9
+          repository: nzp-team/quakec
+          ref: main
+          path: quakec
 
       # ── 2. Patches anwenden ─────────────────────────────────────────
-      - name: Apply NZP-M9 server-browser gamepad patches
+      # WICHTIG: Das Skript muss im quakec-Repo unter scripts/ liegen.
+      # Du kannst es aus deinem quakec-m9-Repo kopieren.
+      - name: Apply NZP-M9 patches
         run: |
           set -euo pipefail
-          cd quakec-m9
+          cd quakec
           if [ ! -f scripts/apply_nzp_m9_patches.py ]; then
-            echo "FEHLER: scripts/apply_nzp_m9_patches.py fehlt im Repo."
-            echo "Bitte das Patch-Skript committen, dann erneut starten."
+            echo "FEHLER: scripts/apply_nzp_m9_patches.py fehlt."
+            echo "Bitte das Patch-Skript in das quakec-Repo committen."
             exit 1
           fi
           python3 scripts/apply_nzp_m9_patches.py
 
-      # ── 3. QEMU für ARM64-Emulation (Engine) ────────────────────────
-      - name: Set up QEMU (ARM64 Emulation)
-        uses: docker/setup-qemu-action@v3
-
-      # ── 4. Engine-Build (FIX: Engine darf keine Spieldaten herunterladen) ─
-      - name: Compile FTE Engine in ARM64 Container
-        run: |
-          # Workaround: Dummy-Ordner für Gamecode erstellen, damit FTE nicht versucht, den gelöschten Commit herunterzuladen
-          mkdir -p fteqw/repos/quakec
-          touch fteqw/repos/quakec/.keep
-
-          docker run --rm --platform linux/arm64 -v "${{ github.workspace }}:/workspace" -w /workspace/fteqw \
-            arm64v8/ubuntu:20.04 bash -c '
-              set -euo pipefail
-              export DEBIAN_FRONTEND=noninteractive
-
-              apt-get update && apt-get install -y --no-install-recommends \
-                build-essential make git curl wget ca-certificates pkg-config perl \
-                libsdl2-dev libgles2-mesa-dev libegl1-mesa-dev libasound2-dev zlib1g-dev
-
-              git config --global --add safe.directory /workspace
-              git config --global --add safe.directory "*"
-
-              if [ -f "engine/Makefile" ]; then
-                echo "Located Makefile in engine/ directory."
-                cd engine
-              elif [ -f "Makefile" ]; then
-                echo "Located Makefile in root directory."
-              else
-                MAKEFILE_PATH=$(find . -maxdepth 4 \( -iname "makefile" -o -iname "GNUmakefile" \) | head -n 1)
-                if [ -n "${MAKEFILE_PATH}" ]; then
-                  BUILD_DIR=$(dirname "${MAKEFILE_PATH}")
-                  echo "Located Makefile at: ${MAKEFILE_PATH} (Directory: ${BUILD_DIR})"
-                  cd "${BUILD_DIR}"
-                else
-                  echo "Error: Could not locate Makefile!"
-                  ls -la
-                  exit 1
-                fi
-              fi
-
-              OPT_FLAGS="-O3 -mcpu=cortex-a35 -mtune=cortex-a35 -funsafe-math-optimizations -fno-math-errno -fno-trapping-math -fomit-frame-pointer -funroll-loops -pipe"
-
-              make makelibs FTE_TARGET=linux_arm64 || true
-              
-              # Der NO_GAMECODE=1 Flag verhindert, dass die Engine versucht, QuakeC herunterzuladen.
-              make m-rel \
-                FTE_TARGET=linux_arm64 \
-                FTE_CONFIG=nzportable \
-                NO_GAMECODE=1 \
-                NO_GAMES=1 \
-                USE_SDL=2 \
-                NO_X11=1 \
-                NO_WAYLAND=1 \
-                NO_VULKAN=1 \
-                CPUOPTIMIZATIONS="${OPT_FLAGS}" \
-                -j"$(nproc)"
-            '
-
-      # ── 5. QuakeC-Build (Unsere Spieldaten) ─────────────────────────
+      # ── 3. QuakeC kompilieren (nur CSQC für csprogs.dat) ───────────
       - name: Compile QuakeC (fteqcc)
         run: |
           set -euo pipefail
-          docker run --rm -v "${{ github.workspace }}:/workspace" -w /workspace/quakec-m9 \
+          docker run --rm -v "${{ github.workspace }}:/workspace" -w /workspace/quakec \
             ubuntu:20.04 bash -c '
               set -euo pipefail
               export DEBIAN_FRONTEND=noninteractive
@@ -110,39 +44,32 @@ jobs:
                 python3 python3-pip build-essential git ca-certificates
 
               echo "=== Installiere Python-Abhängigkeiten ==="
-              if [ -f "tools/requirements.txt" ]; then
-                pip3 install -r tools/requirements.txt
-              else
-                pip3 install fastcrc colorama panda3d
-              fi
+              pip3 install fastcrc colorama panda3d
 
               echo "=== Generiere Hash-Tabelle ==="
               python3 bin/qc_hash_generator.py -i tools/asset_conversion_table.csv -o source/server/hash_table.qc
 
               FTEQCC_BIN="bin/fteqcc-cli-lin"
               if [ ! -x "${FTEQCC_BIN}" ]; then
-                echo "FEHLER: ${FTEQCC_BIN} nicht gefunden oder nicht ausführbar."
+                echo "FEHLER: ${FTEQCC_BIN} nicht gefunden."
                 ls -la bin/ || true
                 exit 1
               fi
 
               mkdir -p build
-              
-              echo "=== Kompiliere SSQC (Server) ==="
-              if [ -f "progs/ssqc.src" ]; then
-                ${FTEQCC_BIN} -O3 -Ono-compound_jumps -Wall -srcfile progs/ssqc.src
-              else
-                echo "WARNUNG: progs/ssqc.src nicht gefunden."
-              fi
 
+              # ---------------------------------------------------------
+              # HIER WIRD NUR CSQC KOMPILIERT, UM NUR csprogs.dat ZU BAUEN
+              # ---------------------------------------------------------
               echo "=== Kompiliere CSQC (Client) ==="
               if [ -f "progs/csqc.src" ]; then
                 ${FTEQCC_BIN} -O3 -Ono-compound_jumps -Wall -srcfile progs/csqc.src
               elif [ -f "progs/csprogs.src" ]; then
                 ${FTEQCC_BIN} -O3 -Ono-compound_jumps -Wall -srcfile progs/csprogs.src
               else
-                echo "WARNUNG: Keine CSQC .src Datei gefunden! Menü-Patch wird nicht kompiliert."
+                echo "FEHLER: Keine CSQC .src Datei gefunden!"
                 find . -name "*.src"
+                exit 1
               fi
 
               echo ""
@@ -150,36 +77,10 @@ jobs:
               find . -maxdepth 4 -name "*.dat" -exec ls -la {} \;
             '
 
-      # ── 6. Artefakte einsammeln ─────────────────────────────────────
-      - name: Stage Complete PortMaster Artifact
-        run: |
-          set -euo pipefail
-          mkdir -p dist/nzp
-
-          BIN=$(find fteqw -maxdepth 6 -type f -executable \
-                \( -iname "*arm64*" -o -iname "*aarch64*" -o -iname "fteqw*" -o -iname "*nzportable*" \) \
-                ! -iname "*.sh" ! -name "fteqcc-cli-lin" | head -n 1)
-          if [ -z "${BIN}" ]; then
-            echo "Error: Engine binary not found after compilation!" && exit 1
-          fi
-          cp "${BIN}" dist/nzp/nzp.aarch64
-          chmod +x dist/nzp/nzp.aarch64
-
-          DATS=$(find quakec-m9 -maxdepth 4 -name "*.dat")
-          if [ -z "${DATS}" ]; then
-            echo "Error: no .dat files produced by QuakeC build!" && exit 1
-          fi
-          for DAT in ${DATS}; do
-            cp "${DAT}" dist/nzp/
-          done
-
-          echo "Final Artifact Contents:"
-          ls -la dist/nzp/
-
-      # ── 7. Upload ───────────────────────────────────────────────────
-      - name: Upload PortMaster Ready Artifact
+      # ── 4. Nur csprogs.dat als Artefakt hochladen ───────────────────
+      - name: Upload csprogs.dat
         uses: actions/upload-artifact@v4
         with:
-          name: nzp-m9pro-portmaster-complete
-          path: dist/nzp/
+          name: nzp-csprogs-patched
+          path: quakec/build/**/csprogs.dat
           if-no-files-found: error
