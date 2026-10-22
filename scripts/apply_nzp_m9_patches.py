@@ -77,12 +77,16 @@ ensure_line(FTE_QC, ".float is_in_menu;", "Füge is_in_menu Feld hinzu")
 ensure_line(FTE_QC, "void(string soundname, float channel, float volume) localsound_enhanced = { localsound(soundname, channel, volume); };", "Füge localsound_enhanced Wrapper hinzu")
 ensure_line(FTE_QC, "void(float dest) setkeydest = #602;", "Füge setkeydest Builtin hinzu")
 
-# 2. menu_defs.qc: Forward-Deklarationen für m_toggle und m_drawloading
+# 2. menu_defs.qc: Forward-Deklarationen für m_toggle und m_drawloading + Dummy für m_drawloading
 menu_defs_injection = """
 // --- NZP-M9 Forward Declarations ---
 void(float wantmode) m_toggle;
 void(vector screensize, float notmenu) m_drawloading;
 // -----------------------------------
+
+// --- NZP-M9 Dummy für fehlenden Ladebildschirm ---
+void(vector screensize, float notmenu) m_drawloading_impl = { };
+// ------------------------------------------------
 """
 append_safe(MENU_DEFS, menu_defs_injection, "Füge menu_defs.qc Forward-Declarations hinzu", "NZP-M9 Forward Declarations")
 
