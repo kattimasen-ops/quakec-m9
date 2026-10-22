@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-# NZP-M9 Server-Browser Gamepad-Navigation — Patch-Skript
-# Wendet 4 Patches an: A (menu_coop.qc) + B (menu_coop.qc) + C/D (sui_sys.qc)
-# Sicher: bricht mit Exit 1 ab, wenn ein Anker nicht eindeutig ist.
+# NZP-M9 Patches: Server-Browser Gamepad-Navigation & Performance-Optimierungen
+# Wendet Patches sicher an. Bricht bei fehlenden Ankern sofort ab (Exit 1).
 
 import sys
 from pathlib import Path
@@ -31,10 +30,14 @@ def patch(path: Path, anchor: str, replacement: str, description: str, marker: s
     path.write_text(content.replace(anchor, replacement, 1), encoding="utf-8")
     print(f"[OK]   {description}")
 
-
 BASE = Path("source/menu")
 MENU_COOP = BASE / "menu_coop.qc"
 SUI_SYS   = BASE / "sui_sys.qc"
+MENU_VIDE = BASE / "menu_vide.qc"
+
+# ==========================================
+# TEIL 1: SERVER-BROWSER GAMEPAD NAVIGATION
+# ==========================================
 
 # ---------- Patch A1: Variable deklarieren ----------
 patch(
@@ -211,5 +214,81 @@ patch(
     marker="NZP-M9: A auf Container wählt erste Zeile",
 )
 
-print("\n=== Alle 6 Patches erfolgreich angewendet. ===")
+# ==========================================
+# TEIL 2: VIDEO-MENÜ OPTIMIERUNGEN
+# ==========================================
+
+# E1: Button-Array um Decals erweitern
+patch(
+    MENU_VIDE,
+    anchor='string menu_video_buttons[12] = {"vm_resol", "vm_fulls", "vm_shfps", "vm_maxps", "vm_vsync", "vm_fov", "vm_gamma", "vm_uwide", "vm_parts", "vm_filtr", "vm_apply", "vm_back"};',
+    replacement='string menu_video_buttons[13] = {"vm_resol", "vm_fulls", "vm_shfps", "vm_maxps", "vm_vsync", "vm_fov", "vm_gamma", "vm_uwide", "vm_parts", "vm_decal", "vm_filtr", "vm_apply", "vm_back"};',
+    description="E1: Button-Array um Decals erweitern",
+    marker='"vm_decal", "vm_filtr"',
+)
+
+# E2: Variable für Decals initialisieren
+patch(
+    MENU_VIDE,
+    anchor='float current_particles;\nfloat current_filter;',
+    replacement='float current_particles;\nfloat current_decals;\nfloat current_filter;',
+    description="E2: current_decals Variable",
+    marker='float current_decals;',
+)
+
+# E3: Decals-Wert beim Öffnen des Menüs auslesen
+patch(
+    MENU_VIDE,
+    anchor='current_particles = cvar("nzp_particles");\n    current_filter =',
+    replacement='current_particles = cvar("nzp_particles");\n    current_decals = cvar("nzp_decals");\n    current_filter =',
+    description="E3: Decals-Wert auslesen",
+    marker='current_decals = cvar("nzp_decals");',
+)
+
+# E4: Funktion zum Umschalten der Decals
+patch(
+    MENU_VIDE,
+    anchor='void() Menu_Video_UpdateUltrawide =',
+    replacement='void() Menu_Video_UpdateDecals =\n{\n    Menu_PlaySound(MENU_SND_ENTER);\n    current_decals = !current_decals;\n    cvar_set("nzp_decals", ftos(current_decals));\n};\n\nvoid() Menu_Video_UpdateUltrawide =',
+    description="E4: Funktion Menu_Video_UpdateDecals",
+    marker='Menu_Video_UpdateDecals',
+)
+
+# E5: Max FPS-Sperre (VSync) entfernen
+patch(
+    MENU_VIDE,
+    anchor='// Max FPS\n    if (cvar("vid_vsync") == 0) {\n        Menu_Button(4, "vm_maxps", "MAX FPS", "Configure Maximum FPS Value.") ? 0 : 0;\n        Menu_CvarSlider(4, "vm_maxps", [10, 500, 490], "cl_maxfps", true, false, false);\n    } else {\n        Menu_GreyButton(4, "[VSYNC ON] MAX FPS");\n    }',
+    replacement='// Max FPS\n    Menu_Button(4, "vm_maxps", "MAX FPS", "Configure Maximum FPS Value.") ? 0 : 0;\n    Menu_CvarSlider(4, "vm_maxps", [10, 500, 490], "cl_maxfps", true, false, false);',
+    description="E5: Max FPS nicht mehr durch VSync blockieren",
+    marker='Menu_CvarSlider(4, "vm_maxps", [10, 500, 490]',
+)
+
+# E6: Navigation reparieren (GetNextButton)
+patch(
+    MENU_VIDE,
+    anchor='if (cvar("vid_vsync") && ret == "vm_maxps")\n        ret = "vm_vsync";\n\n    return ret;',
+    replacement='return ret;',
+    description="E6: VSync-Navigations-Fix (Next)",
+    marker='// Nav fix next',
+)
+
+# E7: Navigation reparieren (GetPreviousButton)
+patch(
+    MENU_VIDE,
+    anchor='if (cvar("vid_vsync") && ret == "vm_maxps")\n        ret = "vm_shfps";\n\n    return ret;',
+    replacement='return ret;',
+    description="E7: VSync-Navigations-Fix (Prev)",
+    marker='// Nav fix prev',
+)
+
+# E8: Decals-Button einfügen und Texture Filtering nach unten verschieben
+patch(
+    MENU_VIDE,
+    anchor='// Texture Filtering\n    Menu_Button(10, "vm_filtr", "TEXTURE FILTERING", "Choose 3D Environment Filtering Mode.") ? Menu_Video_UpdateFiltering() : 0;\n    string filt_string = "";\n    if (current_filter) filt_string = "NEAREST";\n    else filt_string = "LINEAR";\n    Menu_DrawOptionValue(10, filt_string);',
+    replacement='// Decals\n    Menu_Button(10, "vm_decal", "DECALS", "Toggle Bullet Holes and Blood (Saves Performance).") ? Menu_Video_UpdateDecals() : 0;\n    string decal_string = "";\n    if (current_decals) decal_string = "ENABLED";\n    else decal_string = "DISABLED";\n    Menu_DrawOptionValue(10, decal_string);\n\n    // Texture Filtering\n    Menu_Button(11, "vm_filtr", "TEXTURE FILTERING", "Choose 3D Environment Filtering Mode.") ? Menu_Video_UpdateFiltering() : 0;\n    string filt_string = "";\n    if (current_filter) filt_string = "NEAREST";\n    else filt_string = "LINEAR";\n    Menu_DrawOptionValue(11, filt_string);',
+    description="E8: Decals-Button ins Menü einfügen",
+    marker='Menu_Button(10, "vm_decal"',
+)
+
+print("\n=== Alle Patches erfolgreich angewendet. ===")
 sys.exit(0)
