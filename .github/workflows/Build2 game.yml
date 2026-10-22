@@ -42,9 +42,13 @@ jobs:
       - name: Set up QEMU (ARM64 Emulation)
         uses: docker/setup-qemu-action@v3
 
-      # ── 4. Engine-Build (unverändert) ───────────────────────────────
+      # ── 4. Engine-Build (FIX: Engine darf keine Spieldaten herunterladen) ─
       - name: Compile FTE Engine in ARM64 Container
         run: |
+          # Workaround: Dummy-Ordner für Gamecode erstellen, damit FTE nicht versucht, den gelöschten Commit herunterzuladen
+          mkdir -p fteqw/repos/quakec
+          touch fteqw/repos/quakec/.keep
+
           docker run --rm --platform linux/arm64 -v "${{ github.workspace }}:/workspace" -w /workspace/fteqw \
             arm64v8/ubuntu:20.04 bash -c '
               set -euo pipefail
@@ -78,9 +82,13 @@ jobs:
               OPT_FLAGS="-O3 -mcpu=cortex-a35 -mtune=cortex-a35 -funsafe-math-optimizations -fno-math-errno -fno-trapping-math -fomit-frame-pointer -funroll-loops -pipe"
 
               make makelibs FTE_TARGET=linux_arm64 || true
+              
+              # Der NO_GAMECODE=1 Flag verhindert, dass die Engine versucht, QuakeC herunterzuladen.
               make m-rel \
                 FTE_TARGET=linux_arm64 \
                 FTE_CONFIG=nzportable \
+                NO_GAMECODE=1 \
+                NO_GAMES=1 \
                 USE_SDL=2 \
                 NO_X11=1 \
                 NO_WAYLAND=1 \
@@ -89,7 +97,7 @@ jobs:
                 -j"$(nproc)"
             '
 
-      # ── 5. QuakeC-Build (x64 auf Host, mit deinen qc-compiler Flags) ─
+      # ── 5. QuakeC-Build (Unsere Spieldaten) ─────────────────────────
       - name: Compile QuakeC (fteqcc)
         run: |
           set -euo pipefail
@@ -98,11 +106,9 @@ jobs:
               set -euo pipefail
               export DEBIAN_FRONTEND=noninteractive
 
-              # Basis-Tools und Python installieren
               apt-get update && apt-get install -y --no-install-recommends \
                 python3 python3-pip build-essential git ca-certificates
 
-              # 1. Python-Abhängigkeiten für den Hash-Generator
               echo "=== Installiere Python-Abhängigkeiten ==="
               if [ -f "tools/requirements.txt" ]; then
                 pip3 install -r tools/requirements.txt
@@ -110,11 +116,9 @@ jobs:
                 pip3 install fastcrc colorama panda3d
               fi
 
-              # 2. Hash-Tabelle generieren (Schritt 1 aus qc-compiler-gnu.sh)
               echo "=== Generiere Hash-Tabelle ==="
               python3 bin/qc_hash_generator.py -i tools/asset_conversion_table.csv -o source/server/hash_table.qc
 
-              # 3. Kompilieren (Schritt 2 aus qc-compiler-gnu.sh)
               FTEQCC_BIN="bin/fteqcc-cli-lin"
               if [ ! -x "${FTEQCC_BIN}" ]; then
                 echo "FEHLER: ${FTEQCC_BIN} nicht gefunden oder nicht ausführbar."
@@ -152,7 +156,6 @@ jobs:
           set -euo pipefail
           mkdir -p dist/nzp
 
-          # Engine-Binary finden
           BIN=$(find fteqw -maxdepth 6 -type f -executable \
                 \( -iname "*arm64*" -o -iname "*aarch64*" -o -iname "fteqw*" -o -iname "*nzportable*" \) \
                 ! -iname "*.sh" ! -name "fteqcc-cli-lin" | head -n 1)
@@ -162,7 +165,6 @@ jobs:
           cp "${BIN}" dist/nzp/nzp.aarch64
           chmod +x dist/nzp/nzp.aarch64
 
-          # QuakeC .dat Dateien finden (Server und Client)
           DATS=$(find quakec-m9 -maxdepth 4 -name "*.dat")
           if [ -z "${DATS}" ]; then
             echo "Error: no .dat files produced by QuakeC build!" && exit 1
