@@ -2,6 +2,9 @@
 #pragma target fte_5768
 #pragma progs_dat "../build/fte/csprogs.dat"
 
+// WICHTIG: Aktiviert die Menü-Funktionen (#ifdef MENU)
+#define MENU
+
 #pragma includedir "../source/client/"
 #pragma includedir "../source/shared/"
 #pragma includedir "../source/menu/"
@@ -26,7 +29,6 @@ menu_bind.qc         // Bindings Menu
 menu_aces.qc         // Accessibility Menu
 menu_coop.qc         // Co-Op Menu (Wichtig für Serverbrowser!)
 menu_loby.qc         // Lobby Menu
-menu_gamesettings.qc // Game Settings
 menu_bios.qc         // Character Bios
 
 sound_enhanced.qc
