@@ -14,17 +14,15 @@ jobs:
       run:
         shell: bash
     steps:
-      # 1. Dein geforktes Repository direkt in den Workspace der Toolbox klonen
+      # 1. Dein geforktes Repository direkt in den Toolbox-Workspace klonen
       - name: Clone your fork into toolbox workspace
         env:
           GITHUB_REPO: ${{ github.repository }}
           GITHUB_SHA: ${{ github.sha }}
         run: |
-          # Stelle sicher, dass das Zielverzeichnis existiert
           mkdir -p /workspace/repos/quakec
           cd /workspace/repos/quakec
           
-          # Initialisiere das Repo und hole DEINEN Fork
           git init
           git remote add origin https://github.com/${GITHUB_REPO}.git
           git fetch --depth 1 origin ${GITHUB_SHA}
@@ -53,7 +51,7 @@ jobs:
             sed -i '1i #include "fteextensions.qc"' progs/ssqc.src
           fi
           
-          echo "FTE Extensions erfolgreich heruntergeladen und eingebunden."
+          echo "FTE Extensions erfolgreich eingebunden."
 
       # 3. Patches anwenden
       - name: Apply Patches
@@ -63,15 +61,13 @@ jobs:
           cp $GITHUB_WORKSPACE/scripts/apply_nzp_m9_patches.py scripts/
           python3 scripts/apply_nzp_m9_patches.py
 
-      # 4. Build-Skript manipulieren: SSQC überspringen, nur CSQC bauen
+      # 4. Build-Skript: SSQC überspringen, nur CSQC bauen
       - name: Skip SSQC Compile
         run: |
           cd /workspace/repos/quakec
           
-          # Entferne den SSQC-Compile-Befehl
           sed -i '/compile_progs "ssqc"/d' tools/qc-compiler-gnu.sh
           
-          # Füge den CSQC-Compile-Befehl hinzu, falls er fehlt
           if ! grep -q 'compile_progs "csqc"' tools/qc-compiler-gnu.sh; then
             sed -i '/setup;/a \	compile_progs "csqc" "Vril CSQC" "-O3 -Ono-compound_jumps ${TEST_FLAG} -Wall"' tools/qc-compiler-gnu.sh
           fi
@@ -79,7 +75,7 @@ jobs:
           echo "Build-Skript angepasst: SSQC wird übersprungen."
           grep compile_progs tools/qc-compiler-gnu.sh
 
-      # 5. Kompilieren (ohne den fehlerhaften fetch-Schritt)
+      # 5. Kompilieren (direkt, ohne den fehlerhaften /entrypoint.sh fetch)
       - name: Compile CSQC
         run: |
           cd /workspace/repos/quakec
