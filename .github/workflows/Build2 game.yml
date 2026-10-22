@@ -1,4 +1,4 @@
-name: Build Custom NZP csprogs.dat
+name: Build Custom NZP csprogs.dat (Fast)
 
 on:
   push:
@@ -52,8 +52,6 @@ jobs:
           if ! grep -q '#include "fteextensions.qc"' progs/csqc.src; then
             sed -i '1i #include "fteextensions.qc"' progs/csqc.src
           fi
-          
-          echo "FTE Extensions wurden erfolgreich eingebunden."
 
       # 5. Patches anwenden
       - name: Apply Patches
@@ -63,16 +61,29 @@ jobs:
           cp $GITHUB_WORKSPACE/scripts/apply_nzp_m9_patches.py scripts/
           python3 scripts/apply_nzp_m9_patches.py
 
-      # 6. Kompilieren (nutzt das offizielle Toolbox-Skript)
+      # 6. Build-Skript manipulieren: SSQC überspringen, nur CSQC bauen
+      - name: Skip SSQC Compile
+        run: |
+          cd /workspace/repos/quakec
+          # Lösche die Zeile, die den Server-Code (ssqc) kompiliert
+          sed -i '/compile_progs "ssqc"/d' tools/qc-compiler-gnu.sh
+          
+          # Füge den CSQC-Compile-Befehl hinzu, falls er noch nicht existiert
+          if ! grep -q 'compile_progs "csqc"' tools/qc-compiler-gnu.sh; then
+            sed -i '/setup;/a \	compile_progs "csqc" "Vril CSQC" "-O3 -Ono-compound_jumps ${TEST_FLAG} -Wall"' tools/qc-compiler-gnu.sh
+          fi
+          
+          echo "Build-Skript angepasst: SSQC wird übersprungen."
+          cat tools/qc-compiler-gnu.sh | grep compile_progs
+
+      # 7. Kompilieren (Nutzt das modifizierte Skript)
       - name: Compile
         run: /entrypoint.sh build-quakec
 
-      # 7. Die fertige csprogs.dat hochladen
-      - name: Upload Artifact
+      # 8. Nur die fertige csprogs.dat hochladen
+      - name: Upload csprogs.dat
         uses: actions/upload-artifact@v4
         with:
           name: nzp-csprogs-patched
-          path: |
-            /workspace/repos/quakec/build/standard/csprogs.dat
-            /workspace/repos/quakec/build/standard/progs.dat
+          path: /workspace/repos/quakec/build/standard/csprogs.dat
           if-no-files-found: error
