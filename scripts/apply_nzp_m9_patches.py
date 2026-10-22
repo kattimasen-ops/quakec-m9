@@ -37,15 +37,16 @@ def patch(path: Path, anchor: str, replacement: str, description: str, marker: s
     path.write_text(content.replace(anchor, replacement, 1), encoding="utf-8")
     print(f"[OK]   {description}")
 
-def append_safe(path: Path, content: str, description: str, marker: str) -> None:
+def ensure_line(path: Path, line: str, description: str) -> None:
+    """Fügt eine Zeile am Ende der Datei hinzu, wenn sie noch nicht existiert."""
     if not path.exists():
         print(f"[FATAL] {path} existiert nicht.")
         sys.exit(1)
-    text = path.read_text(encoding="utf-8")
-    if marker in text:
+    content = path.read_text(encoding="utf-8")
+    if line in content:
         print(f"[SKIP] {description}: bereits vorhanden")
         return
-    path.write_text(text + "\n" + content, encoding="utf-8")
+    path.write_text(content + "\n" + line + "\n", encoding="utf-8")
     print(f"[OK]   {description}")
 
 BASE = Path("source/menu")
@@ -61,15 +62,10 @@ MENU_DEFS = BASE / "defs/menu_defs.qc"
 # TEIL 0: FEHLENDE DEKLARATIONEN & BUILTINS
 # ==========================================
 
-# 1. fte.qc: Builtins und fehlende Entitätsfelder hinzufügen
-fte_injection = """
-// --- NZP-M9 Custom Additions ---
-.float is_in_menu;
-void(string soundname, float channel, float volume) localsound_enhanced = { localsound(soundname, channel, volume); };
-void(float dest) setkeydest = #602; // Fehlendes FTE Builtin für Menüs
-// ------------------------------
-"""
-append_safe(FTE_QC, fte_injection, "Füge fte.qc Builtins hinzu", "NZP-M9 Custom Additions")
+# 1. fte.qc: Jede Zeile einzeln absichern
+ensure_line(FTE_QC, ".float is_in_menu;", "Füge is_in_menu Feld hinzu")
+ensure_line(FTE_QC, "void(string soundname, float channel, float volume) localsound_enhanced = { localsound(soundname, channel, volume); };", "Füge localsound_enhanced Wrapper hinzu")
+ensure_line(FTE_QC, "void(float dest) setkeydest = #602;", "Füge setkeydest Builtin hinzu")
 
 # 2. menu_defs.qc: Forward-Deklarationen für Menü-Funktionen
 menu_defs_injection = """
@@ -78,16 +74,27 @@ void(float wantmode) m_toggle; // Wird in m_menu.qc vor menu/main.qc aufgerufen
 void(vector screensize, float notmenu) m_drawloading; // Wird in menu/main.qc vor client/main.qc aufgerufen
 // -----------------------------------
 """
+def append_safe(path: Path, content: str, description: str, marker: str) -> None:
+    if not path.exists():
+        print(f"[FATAL] {path} existiert nicht.")
+        sys.exit(1)
+    text = path.read_text(encoding="utf-8")
+    if marker in text:
+        print(f"[SKIP] {description}: bereits vorhanden")
+        return
+    path.write_text(text + "\n" + content, encoding="utf-8")
+    print(f"[OK]   {description}")
+
 append_safe(MENU_DEFS, menu_defs_injection, "Füge menu_defs.qc Forward-Declarations hinzu", "NZP-M9 Forward Declarations")
 
-# 3. Entferne float menu_active; aus client/main.qc (optional, da es bereits entfernt sein kann)
+# 3. Entferne float menu_active; aus client/main.qc (optional)
 patch(
     CLIENT_MAIN,
     anchor="float menu_active;",
     replacement="// float menu_active; (verschoben nach menu/main.qc)",
     description="Entferne doppelte menu_active Definition",
     marker="// float menu_active;",
-    required=False, # <--- WICHTIG: Bricht nicht ab, wenn der Anker fehlt
+    required=False,
 )
 
 # ==========================================
