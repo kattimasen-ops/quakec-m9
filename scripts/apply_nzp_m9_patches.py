@@ -1,19 +1,15 @@
 #!/usr/bin/env python3
 # NZP-M9 Patches: Server-Browser Gamepad-Navigation & Performance-Optimierungen
-# Wendet Patches sicher an. Bricht bei fehlenden Ankern sofort ab (Exit 1).
 
 import sys
 from pathlib import Path
 
 def patch(path: Path, anchor: str, replacement: str, description: str, marker: str) -> None:
     if not path.exists():
-        print(f"[FATAL] {path} existiert nicht. Erwartet Pfad: source/menu/...")
-        print(f"        Repo-Root ist: {Path.cwd()}")
+        print(f"[FATAL] {path} existiert nicht.")
         sys.exit(1)
 
     content = path.read_text(encoding="utf-8")
-
-    # Idempotenz: wenn Marker schon vorhanden, Patch wurde bereits angewendet
     if marker in content:
         print(f"[SKIP] {description}: bereits gepatcht")
         return
@@ -21,10 +17,9 @@ def patch(path: Path, anchor: str, replacement: str, description: str, marker: s
     count = content.count(anchor)
     if count == 0:
         print(f"[FATAL] {description}: Anker NICHT gefunden in {path}")
-        print(f"        Anker (erste 120 Zeichen): {anchor[:120]!r}")
         sys.exit(1)
     if count > 1:
-        print(f"[FATAL] {description}: Anker {count}× gefunden in {path} (erwartet: 1)")
+        print(f"[FATAL] {description}: Anker {count}× gefunden in {path}")
         sys.exit(1)
 
     path.write_text(content.replace(anchor, replacement, 1), encoding="utf-8")
@@ -39,16 +34,16 @@ MENU_VIDE = BASE / "menu_vide.qc"
 # TEIL 1: SERVER-BROWSER GAMEPAD NAVIGATION
 # ==========================================
 
-# ---------- Patch A1: Variable deklarieren ----------
+# A1: Variable deklarieren (als float statt int)
 patch(
     MENU_COOP,
     anchor="int num_cached_servers;",
-    replacement="int num_cached_servers;\nint coop_browse_selected;",
+    replacement="int num_cached_servers;\nfloat coop_browse_selected;",
     description="A1: Variable coop_browse_selected",
-    marker="int coop_browse_selected;",
+    marker="float coop_browse_selected;",
 )
 
-# ---------- Patch A2: Menu_Coop_Browse Init + Clamp ----------
+# A2: Menu_Coop_Browse Init + Clamp
 patch(
     MENU_COOP,
     anchor="void() Menu_Coop_Browse =\n{\n\tMenu_Coop_UpdateCache();",
@@ -71,10 +66,12 @@ patch(
     marker="_browse_init",
 )
 
-# ---------- Patch B: Navigate/Enter-Container-Funktionen anhängen ----------
+# B: Navigate/Enter-Container-Funktionen anhängen (mit Forward-Deklaration für m_toggle)
 NAV_BLOCK = """
 
 // --- NZP-M9: Gamepad-Navigation für Server-Browser ---
+void(float wantmode) m_toggle; // Forward-Deklaration für menu_coop.qc
+
 string(string cur, float direction) Menu_Coop_Browse_Navigate =
 {
 	float is_in_list = (strlen(cur) >= 14 && substring(cur, 0, 14) == "cbm_serverlist");
@@ -120,7 +117,7 @@ patch(
     marker="Menu_Coop_Browse_Navigate",
 )
 
-# ---------- Patch C1: Forward-Declarations in sui_sys.qc ----------
+# C1: Forward-Declarations in sui_sys.qc
 patch(
     SUI_SYS,
     anchor="#define printf(x, ...) print(sprintf(x, __VA_ARGS__))\n\n#endif",
@@ -137,7 +134,7 @@ patch(
     marker="Forward declarations: NZP-M9",
 )
 
-# ---------- Patch C2: downarrow ----------
+# C2: downarrow
 patch(
     SUI_SYS,
     anchor="void() _sui_menukey_downarrow =\n{\n\tstring current_hovered_option = _hover_actions[0];\n\n\tswitch(current_menu) {",
@@ -163,7 +160,7 @@ patch(
     marker="string nav = Menu_Coop_Browse_Navigate(current_hovered_option, 1);",
 )
 
-# ---------- Patch C3: uparrow ----------
+# C3: uparrow
 patch(
     SUI_SYS,
     anchor="void() _sui_menukey_uparrow =\n{\n\tstring current_hovered_option = _hover_actions[0];\n\n\tswitch(current_menu) {",
@@ -189,7 +186,7 @@ patch(
     marker="string nav = Menu_Coop_Browse_Navigate(current_hovered_option, -1);",
 )
 
-# ---------- Patch D: enter auf Container wählt erste Zeile ----------
+# D: enter auf Container wählt erste Zeile
 patch(
     SUI_SYS,
     anchor="void() _sui_menukey_enter =\n{\n\tif (_hover_actions[0] == \"\")\n\t\t_sui_menukey_downarrow();\n\n\t_click_actions[0] =  _hover_actions[0];\n\t_click_action_count = 1;\n\t_last_clicked_action_count = 1;\n};",
@@ -291,4 +288,4 @@ patch(
 )
 
 print("\n=== Alle Patches erfolgreich angewendet. ===")
-sys.exit(0)
+sys.exit(0) 
