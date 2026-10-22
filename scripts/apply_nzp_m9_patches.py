@@ -4,21 +4,36 @@
 import sys
 from pathlib import Path
 
-def patch(path: Path, anchor: str, replacement: str, description: str, marker: str) -> None:
+def patch(path: Path, anchor: str, replacement: str, description: str, marker: str, required: bool = True) -> None:
     if not path.exists():
-        print(f"[FATAL] {path} existiert nicht.")
-        sys.exit(1)
+        if required:
+            print(f"[FATAL] {path} existiert nicht.")
+            sys.exit(1)
+        else:
+            print(f"[SKIP] {description}: Datei {path} fehlt (optional).")
+            return
+
     content = path.read_text(encoding="utf-8")
     if marker in content:
         print(f"[SKIP] {description}: bereits gepatcht")
         return
+
     count = content.count(anchor)
     if count == 0:
-        print(f"[FATAL] {description}: Anker NICHT gefunden in {path}")
-        sys.exit(1)
+        if required:
+            print(f"[FATAL] {description}: Anker NICHT gefunden in {path}")
+            sys.exit(1)
+        else:
+            print(f"[SKIP] {description}: Anker nicht gefunden (optional, wird ignoriert)")
+            return
     if count > 1:
-        print(f"[FATAL] {description}: Anker {count}× gefunden in {path}")
-        sys.exit(1)
+        if required:
+            print(f"[FATAL] {description}: Anker {count}× gefunden in {path}")
+            sys.exit(1)
+        else:
+            print(f"[WARN] {description}: Anker {count}× gefunden (optional, überspringe)")
+            return
+
     path.write_text(content.replace(anchor, replacement, 1), encoding="utf-8")
     print(f"[OK]   {description}")
 
@@ -65,13 +80,14 @@ void(vector screensize, float notmenu) m_drawloading; // Wird in menu/main.qc vo
 """
 append_safe(MENU_DEFS, menu_defs_injection, "Füge menu_defs.qc Forward-Declarations hinzu", "NZP-M9 Forward Declarations")
 
-# 3. Entferne float menu_active; aus client/main.qc (wird jetzt in menu/main.qc definiert)
+# 3. Entferne float menu_active; aus client/main.qc (optional, da es bereits entfernt sein kann)
 patch(
     CLIENT_MAIN,
     anchor="float menu_active;",
     replacement="// float menu_active; (verschoben nach menu/main.qc)",
     description="Entferne doppelte menu_active Definition",
     marker="// float menu_active;",
+    required=False, # <--- WICHTIG: Bricht nicht ab, wenn der Anker fehlt
 )
 
 # ==========================================
