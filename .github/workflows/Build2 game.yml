@@ -9,24 +9,21 @@ jobs:
   build-quakec:
     runs-on: ubuntu-latest
     steps:
-      # ── 1. QuakeC-Repository auschecken ──────────────────────────────
-      - name: Checkout nzp-team/quakec
+      # ── 1. Dein geforktes QuakeC-Repository auschecken ────────────────
+      - name: Checkout kattimasen-ops/quakec-m9
         uses: actions/checkout@v4
         with:
-          repository: nzp-team/quakec
+          repository: kattimasen-ops/quakec-m9
           ref: main
-          path: quakec
+          path: quakec-m9
 
       # ── 2. Patches anwenden ─────────────────────────────────────────
-      # WICHTIG: Das Skript muss im quakec-Repo unter scripts/ liegen.
-      # Du kannst es aus deinem quakec-m9-Repo kopieren.
       - name: Apply NZP-M9 patches
         run: |
           set -euo pipefail
-          cd quakec
+          cd quakec-m9
           if [ ! -f scripts/apply_nzp_m9_patches.py ]; then
-            echo "FEHLER: scripts/apply_nzp_m9_patches.py fehlt."
-            echo "Bitte das Patch-Skript in das quakec-Repo committen."
+            echo "FEHLER: scripts/apply_nzp_m9_patches.py fehlt im Repo."
             exit 1
           fi
           python3 scripts/apply_nzp_m9_patches.py
@@ -35,7 +32,7 @@ jobs:
       - name: Compile QuakeC (fteqcc)
         run: |
           set -euo pipefail
-          docker run --rm -v "${{ github.workspace }}:/workspace" -w /workspace/quakec \
+          docker run --rm -v "${{ github.workspace }}:/workspace" -w /workspace/quakec-m9 \
             ubuntu:20.04 bash -c '
               set -euo pipefail
               export DEBIAN_FRONTEND=noninteractive
@@ -82,5 +79,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: nzp-csprogs-patched
-          path: quakec/build/**/csprogs.dat
+          path: quakec-m9/build/**/csprogs.dat
           if-no-files-found: error
