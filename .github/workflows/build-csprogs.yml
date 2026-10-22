@@ -1,4 +1,4 @@
-name: Generate Custom NZP csprogs.dat (Fast)
+name: Baue Custom NZP csprogs.dat (Fast)
 
 on:
   push:
@@ -22,17 +22,12 @@ jobs:
         run: |
           python3 scripts/apply_nzp_m9_patches.py
 
-      # 4. FTE-Erweiterungen einbinden (nutzt die repository-eigene fte.qc)
       - name: Setup FTE Extensions
         run: |
-          # Entferne die inkompatible, heruntergeladene Datei
           rm -f progs/fteextensions.qc
-          
-          # Binde die repository-eigene fte.qc als erste Datei ein
           if ! grep -q '#include "client/defs/fte.qc"' progs/csqc.src; then
             sed -i '1i #include "client/defs/fte.qc"' progs/csqc.src
           fi
-          
           echo "Die repository-eigene fte.qc wird verwendet."
 
       - name: Skip SSQC Compile
@@ -52,10 +47,13 @@ jobs:
       - name: Compile CSQC
         run: |
           ./tools/qc-compiler-gnu.sh
+          
+          echo "=== Erzeugte .dat-Dateien ==="
+          find . -name "*.dat" -ls
 
-      - name: Upload csprogs.dat
+      - name: Upload Dat Files
         uses: actions/upload-artifact@v4
         with:
           name: nzp-csprogs-patched
-          path: "**/csprogs.dat"
+          path: "**/*.dat"
           if-no-files-found: error
