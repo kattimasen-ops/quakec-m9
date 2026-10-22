@@ -1,4 +1,4 @@
-name: Building Custom NZP csprogs.dat (Fast)
+name: forging Custom NZP csprogs.dat (Fast)
 
 on:
   push:
@@ -20,12 +20,12 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install pandas fastcrc colorama
 
-      # 3. Patches anwenden (Menü- und Performance-Fixes)
+      # 3. Unsere Menü- und Performance-Patches anwenden
       - name: Apply Patches
         run: |
           python3 scripts/apply_nzp_m9_patches.py
 
-      # 4. Direkt kompilieren (unter Verwendung der repo-eigenen fte.qc)
+      # 4. Direkt kompilieren
       - name: Compile CSQC
         run: |
           # Ausführrechte sicherstellen
@@ -35,7 +35,7 @@ jobs:
           python3 bin/qc_hash_generator.py -i tools/asset_conversion_table.csv -o source/server/hash_table.qc
           
           echo "=== Kompiliere CSQC (Manuell) ==="
-          # Der Pfad zur fte.qc wird von der csqc.src bereits korrekt aufgelöst
+          # Der Compiler sucht die fte.qc nun automatisch über die csqc.src
           bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/csqc.src -o csprogs.dat
           
           echo "=== Erzeugte .dat-Dateien im Workspace ==="
