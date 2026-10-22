@@ -8,12 +8,10 @@ def patch(path: Path, anchor: str, replacement: str, description: str, marker: s
     if not path.exists():
         print(f"[FATAL] {path} existiert nicht.")
         sys.exit(1)
-
     content = path.read_text(encoding="utf-8")
     if marker in content:
         print(f"[SKIP] {description}: bereits gepatcht")
         return
-
     count = content.count(anchor)
     if count == 0:
         print(f"[FATAL] {description}: Anker NICHT gefunden in {path}")
@@ -21,20 +19,65 @@ def patch(path: Path, anchor: str, replacement: str, description: str, marker: s
     if count > 1:
         print(f"[FATAL] {description}: Anker {count}× gefunden in {path}")
         sys.exit(1)
-
     path.write_text(content.replace(anchor, replacement, 1), encoding="utf-8")
     print(f"[OK]   {description}")
 
+def append_safe(path: Path, content: str, description: str, marker: str) -> None:
+    if not path.exists():
+        print(f"[FATAL] {path} existiert nicht.")
+        sys.exit(1)
+    text = path.read_text(encoding="utf-8")
+    if marker in text:
+        print(f"[SKIP] {description}: bereits vorhanden")
+        return
+    path.write_text(text + "\n" + content, encoding="utf-8")
+    print(f"[OK]   {description}")
+
 BASE = Path("source/menu")
+CLIENT = Path("source/client")
 MENU_COOP = BASE / "menu_coop.qc"
 SUI_SYS   = BASE / "sui_sys.qc"
 MENU_VIDE = BASE / "menu_vide.qc"
+CLIENT_MAIN = CLIENT / "main.qc"
+FTE_QC = CLIENT / "defs/fte.qc"
+MENU_DEFS = BASE / "defs/menu_defs.qc"
+
+# ==========================================
+# TEIL 0: FEHLENDE DEKLARATIONEN & BUILTINS
+# ==========================================
+
+# 1. fte.qc: Builtins und fehlende Entitätsfelder hinzufügen
+fte_injection = """
+// --- NZP-M9 Custom Additions ---
+.float is_in_menu;
+void(string soundname, float channel, float volume) localsound_enhanced = { localsound(soundname, channel, volume); };
+void(float dest) setkeydest = #602; // Fehlendes FTE Builtin für Menüs
+// ------------------------------
+"""
+append_safe(FTE_QC, fte_injection, "Füge fte.qc Builtins hinzu", "NZP-M9 Custom Additions")
+
+# 2. menu_defs.qc: Forward-Deklarationen für Menü-Funktionen
+menu_defs_injection = """
+// --- NZP-M9 Forward Declarations ---
+void(float wantmode) m_toggle; // Wird in m_menu.qc vor menu/main.qc aufgerufen
+void(vector screensize, float notmenu) m_drawloading; // Wird in menu/main.qc vor client/main.qc aufgerufen
+// -----------------------------------
+"""
+append_safe(MENU_DEFS, menu_defs_injection, "Füge menu_defs.qc Forward-Declarations hinzu", "NZP-M9 Forward Declarations")
+
+# 3. Entferne float menu_active; aus client/main.qc (wird jetzt in menu/main.qc definiert)
+patch(
+    CLIENT_MAIN,
+    anchor="float menu_active;",
+    replacement="// float menu_active; (verschoben nach menu/main.qc)",
+    description="Entferne doppelte menu_active Definition",
+    marker="// float menu_active;",
+)
 
 # ==========================================
 # TEIL 1: SERVER-BROWSER GAMEPAD NAVIGATION
 # ==========================================
 
-# A1: Variable deklarieren (als float statt int)
 patch(
     MENU_COOP,
     anchor="int num_cached_servers;",
@@ -43,7 +86,6 @@ patch(
     marker="float coop_browse_selected;",
 )
 
-# A2: Menu_Coop_Browse Init + Clamp
 patch(
     MENU_COOP,
     anchor="void() Menu_Coop_Browse =\n{\n\tMenu_Coop_UpdateCache();",
@@ -66,12 +108,9 @@ patch(
     marker="_browse_init",
 )
 
-# B: Navigate/Enter-Container-Funktionen anhängen (mit Forward-Deklaration für m_toggle)
 NAV_BLOCK = """
 
 // --- NZP-M9: Gamepad-Navigation für Server-Browser ---
-void(float wantmode) m_toggle; // Forward-Deklaration für menu_coop.qc
-
 string(string cur, float direction) Menu_Coop_Browse_Navigate =
 {
 	float is_in_list = (strlen(cur) >= 14 && substring(cur, 0, 14) == "cbm_serverlist");
@@ -117,7 +156,6 @@ patch(
     marker="Menu_Coop_Browse_Navigate",
 )
 
-# C1: Forward-Declarations in sui_sys.qc
 patch(
     SUI_SYS,
     anchor="#define printf(x, ...) print(sprintf(x, __VA_ARGS__))\n\n#endif",
@@ -134,7 +172,6 @@ patch(
     marker="Forward declarations: NZP-M9",
 )
 
-# C2: downarrow
 patch(
     SUI_SYS,
     anchor="void() _sui_menukey_downarrow =\n{\n\tstring current_hovered_option = _hover_actions[0];\n\n\tswitch(current_menu) {",
@@ -160,7 +197,6 @@ patch(
     marker="string nav = Menu_Coop_Browse_Navigate(current_hovered_option, 1);",
 )
 
-# C3: uparrow
 patch(
     SUI_SYS,
     anchor="void() _sui_menukey_uparrow =\n{\n\tstring current_hovered_option = _hover_actions[0];\n\n\tswitch(current_menu) {",
@@ -186,7 +222,6 @@ patch(
     marker="string nav = Menu_Coop_Browse_Navigate(current_hovered_option, -1);",
 )
 
-# D: enter auf Container wählt erste Zeile
 patch(
     SUI_SYS,
     anchor="void() _sui_menukey_enter =\n{\n\tif (_hover_actions[0] == \"\")\n\t\t_sui_menukey_downarrow();\n\n\t_click_actions[0] =  _hover_actions[0];\n\t_click_action_count = 1;\n\t_last_clicked_action_count = 1;\n};",
@@ -215,7 +250,6 @@ patch(
 # TEIL 2: VIDEO-MENÜ OPTIMIERUNGEN
 # ==========================================
 
-# E1: Button-Array um Decals erweitern
 patch(
     MENU_VIDE,
     anchor='string menu_video_buttons[12] = {"vm_resol", "vm_fulls", "vm_shfps", "vm_maxps", "vm_vsync", "vm_fov", "vm_gamma", "vm_uwide", "vm_parts", "vm_filtr", "vm_apply", "vm_back"};',
@@ -224,7 +258,6 @@ patch(
     marker='"vm_decal", "vm_filtr"',
 )
 
-# E2: Variable für Decals initialisieren
 patch(
     MENU_VIDE,
     anchor='float current_particles;\nfloat current_filter;',
@@ -233,7 +266,6 @@ patch(
     marker='float current_decals;',
 )
 
-# E3: Decals-Wert beim Öffnen des Menüs auslesen
 patch(
     MENU_VIDE,
     anchor='current_particles = cvar("nzp_particles");\n    current_filter =',
@@ -242,7 +274,6 @@ patch(
     marker='current_decals = cvar("nzp_decals");',
 )
 
-# E4: Funktion zum Umschalten der Decals
 patch(
     MENU_VIDE,
     anchor='void() Menu_Video_UpdateUltrawide =',
@@ -251,7 +282,6 @@ patch(
     marker='Menu_Video_UpdateDecals',
 )
 
-# E5: Max FPS-Sperre (VSync) entfernen
 patch(
     MENU_VIDE,
     anchor='// Max FPS\n    if (cvar("vid_vsync") == 0) {\n        Menu_Button(4, "vm_maxps", "MAX FPS", "Configure Maximum FPS Value.") ? 0 : 0;\n        Menu_CvarSlider(4, "vm_maxps", [10, 500, 490], "cl_maxfps", true, false, false);\n    } else {\n        Menu_GreyButton(4, "[VSYNC ON] MAX FPS");\n    }',
@@ -260,7 +290,6 @@ patch(
     marker='Menu_CvarSlider(4, "vm_maxps", [10, 500, 490]',
 )
 
-# E6: Navigation reparieren (GetNextButton)
 patch(
     MENU_VIDE,
     anchor='if (cvar("vid_vsync") && ret == "vm_maxps")\n        ret = "vm_vsync";\n\n    return ret;',
@@ -269,7 +298,6 @@ patch(
     marker='// Nav fix next',
 )
 
-# E7: Navigation reparieren (GetPreviousButton)
 patch(
     MENU_VIDE,
     anchor='if (cvar("vid_vsync") && ret == "vm_maxps")\n        ret = "vm_shfps";\n\n    return ret;',
@@ -278,7 +306,6 @@ patch(
     marker='// Nav fix prev',
 )
 
-# E8: Decals-Button einfügen und Texture Filtering nach unten verschieben
 patch(
     MENU_VIDE,
     anchor='// Texture Filtering\n    Menu_Button(10, "vm_filtr", "TEXTURE FILTERING", "Choose 3D Environment Filtering Mode.") ? Menu_Video_UpdateFiltering() : 0;\n    string filt_string = "";\n    if (current_filter) filt_string = "NEAREST";\n    else filt_string = "LINEAR";\n    Menu_DrawOptionValue(10, filt_string);',
@@ -288,4 +315,4 @@ patch(
 )
 
 print("\n=== Alle Patches erfolgreich angewendet. ===")
-sys.exit(0) 
+sys.exit(0)
