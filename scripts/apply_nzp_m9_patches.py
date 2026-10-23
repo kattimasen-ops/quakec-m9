@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-# NZP-M9 Patches: Alle Features (Gore, HUD, Kill-Streak, Atmosphäre/Nebel,
-# Coop-Browser-Navigation, A/B-Switch)
-# Idempotente Version - sicher für bereits gepatchte Dateien.
-# WICHTIG: source/client/main.qc und source/menu/sui_sys.qc müssen die
-# offizielle Struktur haben. Die Patches nehmen nur additive Änderungen vor.
+# NZP-M9 Patches: Alle Features (HUD, HIT/KILL, Kill-Streak, Atmosphäre/Nebel,
+# Coop-Browser-Navigation, A/B-Switch, Video-Optionen)
+# Gore-Effekte laufen unverändert über das bestehende Partikelsystem.
+# Idempotent. WICHTIG: main.qc und sui_sys.qc müssen die offizielle Struktur haben.
 
 import sys
 import re
@@ -187,8 +186,6 @@ patch(SUI_SYS, ENTER_ANCHOR, ENTER_REPLACEMENT,
       "D: Enter um Container-Enter erweitern",
       "Menu_Coop_Browse_EnterContainer())")
 
-# A/B-Switch: Tauscht die Keycodes vor der Verarbeitung.
-# A (K_GP_A) wird zu ESCAPE (Zurück), B (K_GP_B) wird zu ENTER (Bestätigen).
 AB_ANCHOR = "float(float evtype, float scanx, float chary, float devid) sui_input_event =\n{\n\tswitch (evtype)"
 AB_REPLACEMENT = """float(float evtype, float scanx, float chary, float devid) sui_input_event =
 {
@@ -323,7 +320,7 @@ void() Menu_Video =
 patch(MAIN_QC, 'build_datetime = fgets(file);', 'build_datetime = "M9 Pro Custom Build";\n        // build_datetime = fgets(file);', "Custom Version String", "M9 Pro Custom Build")
 
 # ==========================================
-# TEIL 4: CLIENT_MAIN - INITIALISIERUNG
+# TEIL 4: CLIENT_MAIN – INITIALISIERUNG
 # ==========================================
 patch(CLIENT_MAIN, "void(float apiver, string enginename, float enginever) CSQC_Init =\n{",
     """void(float apiver, string enginename, float enginever) CSQC_Init =
@@ -353,14 +350,9 @@ patch(CLIENT_MAIN, "void(float apiver, string enginename, float enginever) CSQC_
 """,
     "Initialisiere Variablen in CSQC_Init", "// NZP-M9 Initialisierungen")
 
-patch(CLIENT_MAIN, "noref void() CSQC_WorldLoaded =", "void() CSQC_SpawnClientGore;\n\nnoref void() CSQC_WorldLoaded =", "Forward-Deklaration für CSQC_SpawnClientGore", "void() CSQC_SpawnClientGore;")
-
 # ==========================================
 # TEIL 5: CSQC_Parse_Event – NUR return -> break
 # ==========================================
-# Der Original-Code hat im Hitmarker-Case (case 3) ein "return;".
-# Dieses wird durch "break;" ersetzt, damit die switch-Anweisung korrekt
-# verlassen wird. Es wird KEIN neuer Event-Typ eingeführt.
 HITMARK_ANCHOR = "case 3:\n\t\t\t\t\tif (hitmark_ignore_time > time)\n\t\t\t\t\t\treturn;\n\n\t\t\t\t\thitmark_type = var_1;"
 HITMARK_REPLACEMENT = """case 3:
 					if (hitmark_ignore_time > time)
@@ -432,7 +424,7 @@ patch(CLIENT_MAIN, "noref void(float width, float height, float menushown) CSQC_
     "// NZP-M9: Atmosphäre & Nebel")
 
 # ==========================================
-# TEIL 7: HUD & KILL-STREAK (additiv, nach renderscene)
+# TEIL 7: HUD + HIT/KILL + KILL-STREAK (additiv)
 # ==========================================
 HUD_ADDITION = """\t// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
 \tCSQC_UpdateAtmosphere();
@@ -442,6 +434,28 @@ HUD_ADDITION = """\t// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
 
 \t// --- NZP-M9 CUSTOM HUD ---
 \t
+\t// HIT/KILL-Text basierend auf vorhandenen Hitmarkern
+\tif (time < hitmark_time) {
+\t\tif (hitmark_type == 1) dmg_text_str = "KILL";
+\t\telse dmg_text_str = "HIT";
+\t\tdmg_text_time = time + 0.8;
+\t}
+
+\t// Kill-Streak-Logik (nur bei Kills, dedupliziert)
+\tif (hitmark_type == 1 && time < hitmark_time) {
+\t\tif (time - kill_streak_last_time > 0.5) {
+\t\t\tif (time > kill_streak_reset_time) kill_streak_count = 1;
+\t\t\telse kill_streak_count += 1;
+
+\t\t\tkill_streak_last_time = time;
+\t\t\tkill_streak_reset_time = time + 3.0;
+
+\t\t\tif (kill_streak_count == 2) { kill_streak_text = "DOUBLE KILL"; kill_streak_display_time = time + 2.5; }
+\t\t\telse if (kill_streak_count == 3) { kill_streak_text = "TRIPLE KILL"; kill_streak_display_time = time + 2.5; }
+\t\t\telse if (kill_streak_count >= 4) { kill_streak_text = "MULTI KILL!"; kill_streak_display_time = time + 2.5; }
+\t\t}
+\t}
+
 \tfloat current_health = getstatf(STAT_HEALTH);
 \tif (current_health < dmg_last_health) {
 \t\tdmg_indicator_alpha = 0.6;
@@ -450,7 +464,7 @@ HUD_ADDITION = """\t// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
 \tdmg_last_health = current_health;
 \tdmg_indicator_alpha -= frametime * 2;
 \tif (dmg_indicator_alpha < 0) dmg_indicator_alpha = 0;
-\t
+
 \tif (dmg_indicator_alpha > 0) {
 \t\tfloat edge_size = 20;
 \t\tdrawfill([0, 0], [g_width, edge_size], [1, 0, 0], dmg_indicator_alpha, 0);
@@ -458,10 +472,10 @@ HUD_ADDITION = """\t// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
 \t\tdrawfill([0, edge_size], [edge_size, g_height - edge_size*2], [1, 0, 0], dmg_indicator_alpha, 0);
 \t\tdrawfill([g_width - edge_size, edge_size], [edge_size, g_height - edge_size*2], [1, 0, 0], dmg_indicator_alpha, 0);
 \t}
-\t
+
 \tscreen_shake_intensity -= frametime * 25;
 \tif (screen_shake_intensity < 0) screen_shake_intensity = 0;
-\t
+
 \tif (current_health < 30 && !(getstatf(STAT_PERKS) & P_DEAD) && !getstatf(STAT_WEAPONZOOM)) {
 \t\tfloat pulse = (sin(cltime * 8) + 1) * 0.5;
 \t\tdrawfill([0, 0], [g_width, g_height], [1, 0, 0], pulse * 0.4, 0);
@@ -470,7 +484,7 @@ HUD_ADDITION = """\t// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
 \t\t\theartbeat_time = time + 1.0;
 \t\t}
 \t}
-\t
+
 \t// Ambient Dust (nur im Außenbereich)
 \tif (!nzp_last_indoor_state && time > ambient_dust_time && cvar("nzp_particles")) {
 \t\tambient_dust_time = time + 0.1;
@@ -479,50 +493,23 @@ HUD_ADDITION = """\t// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
 \t\tvector dust_pos = getviewprop(VF_ORIGIN) + v_forward * 200 + v_right * (random()*400-200) + v_up * (random()*400-200);
 \t\tpointparticles(particleeffectnum("weapons.impact"), dust_pos, '0 0 0', 1);
 \t}
-\t
+
 \tif (!getstatf(STAT_WEAPONZOOM) && !cvar("chase_active")) {
 \t\tfloat spread = 4.0 + vlen(playerVelocity) * 0.05 + fabs(gun_kick[0]) * 2.0;
 \t\tvector cx_color = [0.8, 0.2, 1];
 \t\tif (current_health < 30) cx_color = [1, 0, 0];
-\t\t
+
 \t\tdrawfill([g_width*0.5 - 1, g_height*0.5 - spread - 6], [2, 6], cx_color, 1, 0);
 \t\tdrawfill([g_width*0.5 - 1, g_height*0.5 + spread], [2, 6], cx_color, 1, 0);
 \t\tdrawfill([g_width*0.5 - spread - 6, g_height*0.5 - 1], [6, 2], cx_color, 1, 0);
 \t\tdrawfill([g_width*0.5 + spread, g_height*0.5 - 1], [6, 2], cx_color, 1, 0);
 \t\tdrawfill([g_width*0.5 - 1, g_height*0.5 - 1], [2, 2], cx_color, 0.5, 0);
 \t}
-\t
-\t// ==========================================
-\t// NZP-M9: Kill-Streak-Logik (gekoppelt an vorhandene Hitmarker)
-\t// ==========================================
-\tif (hitmark_type == 1 && time < hitmark_time) {
-\t\tif (time - kill_streak_last_time > 0.5) {
-\t\t\tif (time > kill_streak_reset_time) {
-\t\t\t\tkill_streak_count = 1;
-\t\t\t} else {
-\t\t\t\tkill_streak_count += 1;
-\t\t\t}
-
-\t\t\tkill_streak_last_time = time;
-\t\t\tkill_streak_reset_time = time + 3.0;
-
-\t\t\tif (kill_streak_count == 2) {
-\t\t\t\tkill_streak_text = "DOUBLE KILL";
-\t\t\t\tkill_streak_display_time = time + 2.5;
-\t\t\t} else if (kill_streak_count == 3) {
-\t\t\t\tkill_streak_text = "TRIPLE KILL";
-\t\t\t\tkill_streak_display_time = time + 2.5;
-\t\t\t} else if (kill_streak_count >= 4) {
-\t\t\t\tkill_streak_text = "MULTI KILL!";
-\t\t\t\tkill_streak_display_time = time + 2.5;
-\t\t\t}
-\t\t}
-\t}
 
 \tif (serverkey("pausestate") != "1") {
 \t\tsui_begin(g_width, g_height);
 \t\tsui_set_align([SUI_ALIGN_END, SUI_ALIGN_START]);
-\t\t
+
 \t\tfloat real_kills = 0;
 \t\tentity player_ent = find(world, classname, "player");
 \t\twhile (player_ent != world) {
@@ -532,9 +519,9 @@ HUD_ADDITION = """\t// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
 \t\t\t}
 \t\t\tplayer_ent = find(player_ent, classname, "player");
 \t\t}
-\t\t
+
 \t\tsui_text([-10, 10], MENU_TEXT_MEDIUM, sprintf("KILLS: %d", real_kills), [0.8, 0.2, 1], 1, 0);
-\t\t
+
 \t\tfloat mins = floor(cltime / 60);
 \t\tfloat secs = floor(cltime % 60);
 \t\tsui_text([-10, 30], MENU_TEXT_SMALL, sprintf("TIME: %02d:%02d", mins, secs), [1, 1, 1], 1, 0);
@@ -547,7 +534,7 @@ HUD_ADDITION = """\t// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
 \t\t\tsui_set_align([SUI_ALIGN_CENTER, SUI_ALIGN_CENTER]);
 \t\t\tsui_text([0, -offset_y], MENU_TEXT_MEDIUM, dmg_text_str, dmg_color, diff, 0);
 \t\t}
-\t\t
+
 \t\tif (time < kill_streak_display_time) {
 \t\t\tsui_set_align([SUI_ALIGN_CENTER, SUI_ALIGN_CENTER]);
 \t\t\tsui_text([0, -120], MENU_TEXT_LARGE, kill_streak_text, [1, 0.5, 0], 1, 0);
@@ -557,7 +544,7 @@ HUD_ADDITION = """\t// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
 
 patch(CLIENT_MAIN, "\t//does what you think it does\n\trenderscene();",
     HUD_ADDITION,
-    "HUD-Block inkl. Kill-Streak nach renderscene() einfügen",
+    "HUD-Block inkl. HIT/KILL + Kill-Streak nach renderscene() einfügen",
     "--- NZP-M9 CUSTOM HUD ---")
 
 print("\n=== Alle Patches erfolgreich angewendet (idempotent). ===")
