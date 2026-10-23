@@ -26,9 +26,6 @@ def patch_regex(path: Path, pattern: str, replacement: str, description: str, ma
     if count == 1:
         path.write_text(new_content, encoding="utf-8")
         print(f"[OK]   {description}")
-    else:
-        # Wenn der Marker nicht da ist, aber der Patch schon angewendet wurde, ignorieren wir das
-        pass
 
 def ensure_line(path: Path, line: str, description: str) -> None:
     if not path.exists():
@@ -58,10 +55,7 @@ FTE_QC = CLIENT / "defs/fte.qc"
 MENU_DEFS = BASE / "defs/menu_defs.qc"
 MENU_CRED = BASE / "menu_cred.qc"
 
-# ==========================================
-# TEIL 0: FEHLENDE DEKLARATIONEN & BUILTINS
-# ==========================================
-
+# Teil 0: Basis-Definitionen
 if MENU_DEFS.exists():
     content = MENU_DEFS.read_text(encoding="utf-8")
     content = content.replace("void() Menu_DrawMapPreview = { };", "")
@@ -98,10 +92,7 @@ void() Menu_Credits =
 """
 MENU_CRED.write_text(cred_safe, encoding="utf-8")
 
-# ==========================================
-# TEIL 1: SERVER-BROWSER GAMEPAD NAVIGATION
-# ==========================================
-
+# Teil 1: Server-Browser
 patch(MENU_COOP, "int num_cached_servers;", "int num_cached_servers;\nfloat coop_browse_selected;", "A1: Variable coop_browse_selected", "float coop_browse_selected;")
 patch(MENU_COOP, "void() Menu_Coop_Browse =\n{\n\tMenu_Coop_UpdateCache();", 
       "void() Menu_Coop_Browse =\n{\n\tstatic float _browse_init;\n\tif (!_browse_init) {\n\t\tcoop_browse_selected = -1;\n\t\t_browse_init = true;\n\t}\n\tMenu_Coop_UpdateCache();\n\tif (coop_browse_selected < -1) coop_browse_selected = -1;\n\tif (num_cached_servers > 0 && coop_browse_selected >= num_cached_servers)\n\t\tcoop_browse_selected = num_cached_servers - 1;",
@@ -153,7 +144,7 @@ patch(SUI_SYS, "void() _sui_menukey_enter =\n{\n\tif (_hover_actions[0] == \"\")
       "D: enter auf Container", "Menu_Coop_Browse_EnterContainer())")
 
 # ==========================================
-# TEIL 2: VIDEO-MENÜ (KORRIGIERTE POSITIONIERUNG)
+# TEIL 2: VIDEO-MENÜ (KORRIGIERT)
 # ==========================================
 
 patch_regex(
@@ -164,24 +155,35 @@ patch_regex(
     '"vm_dynlgt", "vm_shdw"'
 )
 
-patch(MENU_VIDE, "float current_filter;", "float current_dynlight;\nfloat current_shadows;\nfloat current_filter;", "E2: current_dynlight & current_shadows hinzufügen", "float current_dynlight;")
-patch(MENU_VIDE, 'current_filter =', 'current_dynlight = cvar("r_dynamic");\n    current_shadows = cvar("r_shadows");\n    current_filter =', "E3: Dynamic Lights & Shadows auslesen", 'current_dynlight = cvar("r_dynamic");')
+# Variablen (E2) - Wir suchen jetzt nach dem Block, der evtl. schon DynLights hat, um Dopplungen zu vermeiden
+if "float current_dynlight;" not in MENU_VIDE.read_text(encoding="utf-8"):
+    patch(MENU_VIDE, "float current_filter;", "float current_dynlight;\nfloat current_shadows;\nfloat current_filter;", "E2: current_dynlight & current_shadows hinzufügen", "float current_dynlight;")
 
+# Auslesen (E3)
+if 'current_dynlight = cvar("r_dynamic");' not in MENU_VIDE.read_text(encoding="utf-8"):
+    patch(MENU_VIDE, 'current_filter =', 'current_dynlight = cvar("r_dynamic");\n    current_shadows = cvar("r_shadows");\n    current_filter =', "E3: Dynamic Lights & Shadows auslesen", 'current_dynlight = cvar("r_dynamic");')
+
+# Funktionen (E4)
 patch_regex(
     MENU_VIDE,
     r"void\(\) Menu_Video_UpdateUltrawide =",
-    '''void() Menu_Video_UpdateDynLight = { Menu_PlaySound(MENU_SND_ENTER); current_dynlight = !current_dynlight; cvar_set("r_dynamic", ftos(current_dynlight)); };
+    '''void() Menu_Video_UpdateDecals = { Menu_PlaySound(MENU_SND_ENTER); current_decals = !current_decals; cvar_set("nzp_decals", ftos(current_decals)); };
+void() Menu_Video_UpdateDynLight = { Menu_PlaySound(MENU_SND_ENTER); current_dynlight = !current_dynlight; cvar_set("r_dynamic", ftos(current_dynlight)); };
 void() Menu_Video_UpdateShadows = { Menu_PlaySound(MENU_SND_ENTER); current_shadows = !current_shadows; cvar_set("r_shadows", ftos(current_shadows)); };
 void() Menu_Video_UpdateUltrawide =''',
-    "E4: Funktionen für Dynamic Lights & Shadows",
+    "E4: Funktionen für Decals, Dynamic Lights & Shadows",
     "Menu_Video_UpdateDynLight"
 )
 
-# Hier kürzen wir den Text und fügen die Buttons ein
+# HIER IST DER FIX: Der komplette UI-Block wird ersetzt, inklusive Decals!
 patch_regex(
     MENU_VIDE,
-    r"// Texture Filtering\s*Menu_Button\(\d+, \"vm_filtr\".*?Menu_DrawOptionValue\(\d+, filt_string\);",
-    '''// Dynamic Lights
+    r"// Dynamic Lights\s*Menu_Button\(\d+, \"vm_dynlgt\".*?Menu_DrawOptionValue\(\d+, filt_string\);",
+    '''// Decals
+    Menu_Button(10, "vm_decal", "DECALS", "Toggle Bullet Holes and Blood.") ? Menu_Video_UpdateDecals() : 0;
+    Menu_DrawOptionValue(10, current_decals ? "ENABLED" : "DISABLED");
+
+    // Dynamic Lights
     Menu_Button(11, "vm_dynlgt", "DYNAMIC LIGHTS", "Toggle Realtime Lights.") ? Menu_Video_UpdateDynLight() : 0;
     Menu_DrawOptionValue(11, current_dynlight ? "ENABLED" : "DISABLED");
 
@@ -190,14 +192,13 @@ patch_regex(
     Menu_DrawOptionValue(12, current_shadows ? "ENABLED" : "DISABLED");
 
     // Texture Filtering
-    Menu_Button(13, "vm_filtr", "TEXTURE FILTERING", "Choose 3D Environment Filtering Mode.") ? Menu_Video_UpdateFiltering() : 0;
-    string filt_string = (current_filter) ? "NEAREST" : "LINEAR";
-    Menu_DrawOptionValue(13, filt_string);''',
-    "E5: UI-Code für Dynamic Lights & Shadows einfügen",
-    'vm_dynlgt", "DYNAMIC LIGHTS'
+    Menu_Button(13, "vm_filtr", "TEXTURE FILTERING", "Choose Filtering Mode.") ? Menu_Video_UpdateFiltering() : 0;
+    Menu_DrawOptionValue(13, current_filter ? "NEAREST" : "LINEAR");''',
+    "E5: UI-Code für Decals, DynLights & Shadows einfügen",
+    'vm_decal", "DECALS'
 )
 
-# NEU: Die Positionierung der unteren Buttons reparieren
+# Buttons nach unten schieben
 patch_regex(
     MENU_VIDE,
     r"Menu_DrawDivider\([-\d.]+\);",
