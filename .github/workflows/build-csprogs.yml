@@ -1,4 +1,4 @@
-name: Kacke Custom NZP (csprogs.dat & menu.dat)
+name: Build Custom NZP (csprogs.dat & menu.dat)
 
 on:
   push:
@@ -29,12 +29,10 @@ jobs:
           echo "=== Generiere Hash-Tabelle ==="
           python3 bin/qc_hash_generator.py -i tools/asset_conversion_table.csv -o source/server/hash_table.qc
           
-          echo "=== Kompiliere menu.dat ==="
-          # Das Menü wird aus derselben Quelle gebaut, aber als menu.dat ausgegeben
-          bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/csqc.src -o menu.dat
+          echo "=== Kompiliere menu.dat (aus menu.src) ==="
+          bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/menu.src -o menu.dat
           
-          echo "=== Kompiliere csprogs.dat ==="
-          # Das eigentliche Client-Programm
+          echo "=== Kompiliere csprogs.dat (aus csqc.src) ==="
           bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/csqc.src -o csprogs.dat
           
           echo "=== Ergebnis ==="
@@ -44,7 +42,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: nzp-patched-files
-          # Lädt beide Dateien hoch
           path: |
             menu.dat
             csprogs.dat
