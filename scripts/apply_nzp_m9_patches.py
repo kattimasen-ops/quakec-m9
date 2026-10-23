@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# NZP-M9 Patches: Server-Browser, Performance, Custom HUD & Extreme Gore Mod
+# NZP-M9 Patches: Server-Browser, Performance, HUD & Client-Side Gore Mod
 
 import sys
 import re
@@ -40,36 +40,20 @@ def append_safe(path: Path, content: str, description: str, marker: str) -> None
 
 BASE = Path("source/menu")
 CLIENT = Path("source/client")
-SERVER = Path("source/server")
-PROGS = Path("progs")
 MENU_COOP = BASE / "menu_coop.qc"
 SUI_SYS   = BASE / "sui_sys.qc"
 MENU_VIDE = BASE / "menu_vide.qc"
 MENU_MAIN_MENU = BASE / "m_menu.qc"
 MAIN_QC = BASE / "main.qc"
 CLIENT_MAIN = CLIENT / "main.qc"
+CLIENT_PARTICLES = CLIENT / "particles.qc"
 FTE_QC = CLIENT / "defs/fte.qc"
 MENU_DEFS = BASE / "defs/menu_defs.qc"
 MENU_CRED = BASE / "menu_cred.qc"
 PARTICLES_DIR = Path("particles")
 
-DAMAGE_QC = SERVER / "damage.qc"
-CLIENTFUNCS_QC = SERVER / "clientfuncs.qc"
-SSQC_SRC = PROGS / "ssqc.src"
-
 # ==========================================
-# TEIL 0: FIX SSQC.SRC FÜR FTE-TARGET
-# ==========================================
-patch(
-    SSQC_SRC,
-    '#pragma progs_dat "../build/standard/progs.dat"',
-    '#pragma progs_dat "../build/standard/progs.dat"\n#pragma target fte_5768',
-    "Füge #pragma target fte_5768 zu ssqc.src hinzu",
-    "#pragma target fte_5768"
-)
-
-# ==========================================
-# TEIL 0.5: BASIS
+# TEIL 0: BASIS
 # ==========================================
 if MENU_DEFS.exists():
     content = MENU_DEFS.read_text(encoding="utf-8")
@@ -141,7 +125,7 @@ patch(SUI_SYS, "void() _sui_menukey_enter =\n{\n\tif (_hover_actions[0] == \"\")
       "D: enter auf Container", "Menu_Coop_Browse_EnterContainer())")
 
 # ==========================================
-# TEIL 1.5: FIX A/B Tausch (in sui_sys.qc)
+# TEIL 1.5: FIX A/B Tausch
 # ==========================================
 patch(
     SUI_SYS,
@@ -347,7 +331,7 @@ patch(
 )
 
 # ==========================================
-# TEIL 4: CUSTOM HUD (FIX KILL COUNTER)
+# TEIL 4: CUSTOM HUD (KILL COUNTER)
 # ==========================================
 patch(
     CLIENT_MAIN,
@@ -418,59 +402,52 @@ patch(
 )
 
 # ==========================================
-# TEIL 6: EXTREME GORE MOD
+# TEIL 5: CLIENT-SIDE GORE MOD (KEIN SERVER-PATCH!)
 # ==========================================
+
+# 1. Funktion zum Spawnen der Gore-Effekte in particles.qc
+gore_function = """
+
+// --- NZP-M9 CLIENT-SIDE GORE ---
+void() CSQC_SpawnClientGore =
+{
+    // Hole die Blickrichtung des Spielers
+    makevectors(getviewprop(VF_ANGLES));
+    vector view_org = getviewprop(VF_ORIGIN);
+    
+    // Spawne die Partikel 100 Units in Blickrichtung (mitten ins Gesicht des Zombies)
+    vector hit_pos = view_org + v_forward * 100;
+
+    // Spawne Blut-Partikel (mehrfach für den Extreme-Effekt)
+    for (int i = 0; i < 3; i++) {
+        Particles_RunParticle(CSQC_PART_BLOODIMPACT, hit_pos + (v_right * (random()*10-5)) + (v_up * (random()*10-5)), 0, 0);
+    }
+    
+    // Wenn es ein Kill war, spawne Gibs
+    if (hitmark_type == 1) {
+        Particles_RunParticle(CSQC_PART_ZOMBIEGIB, hit_pos, 0, 0);
+        Particles_RunParticle(CSQC_PART_ZOMBIEGIB, hit_pos + (v_forward * 20), 0, 0);
+    }
+};
+"""
+append_safe(CLIENT_PARTICLES, gore_function, "Füge Client-Gore-Funktion zu particles.qc hinzu", "CSQC_SpawnClientGore")
+
+# 2. Trigger in CSQC_Parse_Event einbauen (direkt nachdem der Hitmarker gesetzt wurde)
 patch(
-    CLIENTFUNCS_QC,
-    "#ifdef FTE\n\n\tFTE_RunParticleEffect(world, CSQC_PART_BLOODIMPACT, org, 0, world);\n\n#else\n\n\tparticle (org, vel*0.1, 73, damage*2);\n\n#endif // FTE",
-    """#ifdef FTE
-
-\tFTE_RunParticleEffect(world, CSQC_PART_BLOODIMPACT, org, 0, world);
-\t
-\tif (damage > 20) {
-\t\tFTE_RunParticleEffect(world, CSQC_PART_BLOODIMPACT, org, 0, world);
-\t\tFTE_RunParticleEffect(world, CSQC_PART_BLOODIMPACT, org, 0, world);
-\t}
-
-#else
-
-\tparticle (org, vel*0.1, 73, damage*2);
-
-#endif // FTE""",
-    "Extreme Gore: Mehr Blut",
-    "NZP-M9 EXTREME GORE: Spawne mehr Blut"
+    CLIENT_MAIN,
+    'hitmark_type = var_1;\n\t\t\t\t\t\n\t\t\t\t\t// NZP-M9 Damage Numbers Trigger',
+    'hitmark_type = var_1;\n\t\t\t\t\t\n\t\t\t\t\t// NZP-M9 Client-Side Gore Trigger!\n\t\t\t\t\tCSQC_SpawnClientGore();\n\t\t\t\t\t\n\t\t\t\t\t// NZP-M9 Damage Numbers Trigger',
+    "Trigger Client-Gore on Hitmarker",
+    "CSQC_SpawnClientGore();"
 )
 
+# 3. Forward-Deklaration in main.qc
 patch(
-    DAMAGE_QC,
-    "if (WepDef_WeaponCanGibEnemy(self.weapon) && body_ent.larm.owner.rarm.deadflag && body_ent.larm.deadflag)",
-    "if (WepDef_WeaponCanGibEnemy(self.weapon) && (body_ent.larm.owner.rarm.deadflag || body_ent.larm.deadflag || random() < 0.5))",
-    "Extreme Gore: Linker Arm trennt leichter ab",
-    "random() < 0.5"
-)
-patch(
-    DAMAGE_QC,
-    "if (WepDef_WeaponCanGibEnemy(self.weapon) && body_ent.rarm.owner.larm.deadflag && body_ent.rarm.deadflag)",
-    "if (WepDef_WeaponCanGibEnemy(self.weapon) && (body_ent.rarm.owner.larm.deadflag || body_ent.rarm.deadflag || random() < 0.5))",
-    "Extreme Gore: Rechter Arm trennt leichter ab",
-    "random() < 0.5"
-)
-
-patch(
-    DAMAGE_QC,
-    'case "ai_zombie":\n\t\t\t\tif (trace_endpos_z < hit_ent.origin_z) {\n\t\t\t\t\tf_damage = damage*getWeaponMultiplier(self.weapon, self.perks, LOWER_TORSO_X);\n\t\t\t\t\thit_ent.hit_region = HIT_REGION_TORSO_LOWER;\n\t\t\t\t}',
-    '''case "ai_zombie":
-\t\t\t\tif (trace_endpos_z < hit_ent.origin_z) {
-\t\t\t\t\tf_damage = damage*getWeaponMultiplier(self.weapon, self.perks, LOWER_TORSO_X);
-\t\t\t\t\thit_ent.hit_region = HIT_REGION_TORSO_LOWER;
-\t\t\t\t\t
-\t\t\t\t\tif (WepDef_WeaponCanGibEnemy(self.weapon) && random() < 0.4) {
-\t\t\t\t\t\tspawn_gibs(trace_endpos);
-\t\t\t\t\t\tSpawnBlood(trace_endpos, trace_endpos, 100);
-\t\t\t\t\t}
-\t\t\t\t}''',
-    "Extreme Gore: Bein-Gibs spawnen",
-    "Fake Bein-Gibs spawnen"
+    CLIENT_MAIN,
+    "noref void() CSQC_WorldLoaded =",
+    "void() CSQC_SpawnClientGore;\n\nnoref void() CSQC_WorldLoaded =",
+    "Forward-Deklaration für CSQC_SpawnClientGore",
+    "void() CSQC_SpawnClientGore;"
 )
 
 print("\n=== Alle Patches erfolgreich angewendet. ===")
