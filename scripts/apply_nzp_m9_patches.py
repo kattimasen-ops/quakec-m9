@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# NZP-M9 Patches: Server-Browser, Performance, Custom Handheld Edits & Particles
+# NZP-M9 Patches: Server-Browser, Performance, Custom Edits & Modern HUD
 
 import sys
 import re
@@ -46,6 +46,7 @@ MENU_VIDE = BASE / "menu_vide.qc"
 MENU_MAIN_MENU = BASE / "m_menu.qc"
 MAIN_QC = BASE / "main.qc"
 CLIENT_MAIN = CLIENT / "main.qc"
+CLIENT_HUD = CLIENT / "hud.qc"
 FTE_QC = CLIENT / "defs/fte.qc"
 MENU_DEFS = BASE / "defs/menu_defs.qc"
 MENU_CRED = BASE / "menu_cred.qc"
@@ -126,12 +127,9 @@ patch(SUI_SYS, "void() _sui_menukey_enter =\n{\n\tif (_hover_actions[0] == \"\")
 # ==========================================
 # TEIL 2: VIDEO-MENÜ & CUSTOM OPTIONEN
 # ==========================================
-
-# Zeilenabstand im Menü verkleinern
 content = MENU_MAIN_MENU.read_text(encoding="utf-8")
 content = content.replace("50 + (order * 25)", "50 + (order * 20)")
 content = content.replace("-50 + (order * 25)", "-50 + (order * 20)")
-# Lila Farben
 content = content.replace("is_hovered ? [1, 0, 0] : [1, 1, 1]", "is_hovered ? [0.8, 0.2, 1] : [1, 1, 1]") 
 content = content.replace("[0.4, 0, 0]", "[0.6, 0, 0.8]") 
 MENU_MAIN_MENU.write_text(content, encoding="utf-8")
@@ -302,21 +300,111 @@ patch(MAIN_QC, 'build_datetime = fgets(file);', 'build_datetime = "M9 Pro Custom
 # ==========================================
 # TEIL 3: ADVANCED PARTICLES (Memory Safe Version)
 # ==========================================
-# We do NOT overwrite the custom file anymore. We use the native FTE 'highfps' set.
-# This drastically reduces memory usage (fixes SIGKILL OOM) while keeping good gore.
-
-# Eventuell vorhandene alte Partikel-Dateien löschen, um Verwirrung zu vermeiden
 if (PARTICLES_DIR / "m9_spikeset.cfg").exists():
     (PARTICLES_DIR / "m9_spikeset.cfg").unlink()
     print("[OK]   Alte schwere m9_spikeset.cfg gelöscht (Speicher sparen)")
 
-# CSQC_Init patchen, um das RAM-schonende 'highfps' Set zu laden
 patch(
     CLIENT_MAIN,
     "void(float apiver, string enginename, float enginever) CSQC_Init =\n{",
     'void(float apiver, string enginename, float enginever) CSQC_Init =\n{\n\tlocalcmd("r_particledesc highfps\\n");',
     "Lade Custom Particles (highfps) in CSQC_Init",
     'r_particledesc highfps'
+)
+
+# ==========================================
+# TEIL 4: CUSTOM HUD & VISUALS (BATTERY, KILLS, VIGNETTE, DAMAGE NUMBERS)
+# ==========================================
+
+# 1. Vignette & Damage Number Variablen in main.qc (CSQC) hinzufügen
+patch(
+    CLIENT_MAIN,
+    "void(float width, float height, float menushown) CSQC_UpdateView =",
+    """// --- NZP-M9 Custom HUD Variablen ---
+float dmg_text_time;
+string dmg_text_str;
+
+void(float width, float height, float menushown) CSQC_UpdateView =""",
+    "Füge HUD-Variablen für Vignette/Damage hinzu",
+    "float dmg_text_time;"
+)
+
+# 2. Damage Numbers im CSQC_Parse_Event triggern
+patch(
+    CLIENT_MAIN,
+    'case 3:\n\t\t\t\t\tif (hitmark_ignore_time > time)\n\t\t\t\t\t\treturn;\n\n\t\t\t\t\thitmark_type = var_1;',
+    'case 3:\n\t\t\t\t\tif (hitmark_ignore_time > time)\n\t\t\t\t\t\treturn;\n\n\t\t\t\t\thitmark_type = var_1;\n\t\t\t\t\t\n\t\t\t\t\t// NZP-M9 Damage Numbers Trigger\n\t\t\t\t\tif (hitmark_type == 1) {\n\t\t\t\t\t\tdmg_text_str = "KILL";\n\t\t\t\t\t} else {\n\t\t\t\t\t\tdmg_text_str = "HIT";\n\t\t\t\t\t}\n\t\t\t\t\tdmg_text_time = time + 0.8;',
+    "Trigger Damage Numbers on Hit",
+    "dmg_text_str = \"KILL\";"
+)
+
+# 3. Vignette und Damage Numbers im CSQC_UpdateView zeichnen
+patch(
+    CLIENT_MAIN,
+    "\tif (cvar(\"chase_active\")) {\n\t\tChase_Update();\n\t}\n\n\t//does what you think it does\n\trenderscene();",
+    """\tif (cvar("chase_active")) {
+\t\tChase_Update();
+\t}
+
+\t//does what you think it does
+\trenderscene();
+
+\t// --- NZP-M9 VIGNETTE ---
+\tfloat v_size = 40; // Breite des dunklen Randes
+\tfloat v_alpha = 0.4; // Stärke
+\t// Oben, Unten, Links, Rechts
+\tdrawfill([0, 0], [g_width, v_size], [0, 0, 0], v_alpha, 0);
+\tdrawfill([0, g_height - v_size], [g_width, v_size], [0, 0, 0], v_alpha, 0);
+\tdrawfill([0, v_size], [v_size, g_height - v_size*2], [0, 0, 0], v_alpha, 0);
+\tdrawfill([g_width - v_size, v_size], [v_size, g_height - v_size*2], [0, 0, 0], v_alpha, 0);
+
+\t// --- NZP-M9 DAMAGE NUMBERS ---
+\tif (time < dmg_text_time) {
+\t\tfloat diff = dmg_text_time - time; // 0.8 -> 0.0
+\t\tfloat offset_y = 100 - ((0.8 - diff) * 80); // Floatet von 100 nach 20 hoch
+\t\tvector dmg_color = [1, 0.2, 1]; // Lila
+\t\tif (dmg_text_str == "KILL") dmg_color = [1, 0, 0]; // Rot bei Kill
+
+\t\t// Zeichne den Text zentriert über dem Fadenkreuz
+\t\tsui_begin(g_width, g_height);
+\t\tsui_set_align([SUI_ALIGN_CENTER, SUI_ALIGN_CENTER]);
+\t\tsui_text([0, -offset_y], MENU_TEXT_LARGE, dmg_text_str, dmg_color, diff, 0);
+\t\tsui_end();
+\t}""",
+    "Zeichne Vignette und Damage Numbers",
+    "--- NZP-M9 VIGNETTE ---"
+)
+
+# 4. Batterie und Kills im HUD zeichnen (hud.qc)
+patch(
+    CLIENT_HUD,
+    "void() HUD_DrawElements =",
+    """void() HUD_DrawElements =
+{
+\t// --- NZP-M9 Custom HUD (Battery & Kills) ---
+\t// Batterie oben rechts
+\tfloat bat_pct = getbattery(0);
+\tif (bat_pct >= 0) { // -1 bedeutet System unterstützt es nicht
+\t\tfloat bat_charge = getbattery(1);
+\t\tvector bat_col = [0, 1, 0]; // Grün
+\t\tif (bat_pct < 20) bat_col = [1, 0, 0]; // Rot
+\t\telse if (bat_pct < 50) bat_col = [1, 1, 0]; // Gelb
+\t\t
+\t\tif (bat_charge > 0) bat_col = [0, 0.5, 1]; // Blau beim Laden
+\t\t
+\t\tsui_set_align([SUI_ALIGN_END, SUI_ALIGN_START]);
+\t\tsui_text([-10, 10], MENU_TEXT_SMALL, sprintf("BAT %d%%", bat_pct), bat_col, 1, 0);
+\t}
+
+\t// Kills unten rechts
+\tfloat my_kills = getstatf(STAT_KILLEDMONSTERS); // Wird vom Server genutzt
+\tsui_set_align([SUI_ALIGN_END, SUI_ALIGN_END]);
+\tsui_text([-10, -40], MENU_TEXT_MEDIUM, sprintf("KILLS: %d", my_kills), [0.8, 0.2, 1], 1, 0);
+
+\t// Original HUD rendern
+\tsui_push_frame([0, 0], sui_current_frame_size());""",
+    "Füge Batterie & Kills zum HUD hinzu",
+    "BAT %d%%"
 )
 
 print("\n=== Alle Patches erfolgreich angewendet. ===")
