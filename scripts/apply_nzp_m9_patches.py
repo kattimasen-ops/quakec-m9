@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# NZP-M9 Patches: Server-Browser, Performance, Custom Edits & Modern HUD
+# NZP-M9 Patches: Server-Browser, Performance, Custom HUD & Extreme Gore Mod
 
 import sys
 import re
@@ -40,6 +40,7 @@ def append_safe(path: Path, content: str, description: str, marker: str) -> None
 
 BASE = Path("source/menu")
 CLIENT = Path("source/client")
+SERVER = Path("source/server")
 MENU_COOP = BASE / "menu_coop.qc"
 SUI_SYS   = BASE / "sui_sys.qc"
 MENU_VIDE = BASE / "menu_vide.qc"
@@ -50,6 +51,10 @@ FTE_QC = CLIENT / "defs/fte.qc"
 MENU_DEFS = BASE / "defs/menu_defs.qc"
 MENU_CRED = BASE / "menu_cred.qc"
 PARTICLES_DIR = Path("particles")
+
+# Server-Dateien für Gore
+DAMAGE_QC = SERVER / "damage.qc"
+CLIENTFUNCS_QC = SERVER / "clientfuncs.qc"
 
 # ==========================================
 # TEIL 0: AUFRÄUMEN & BASIS
@@ -314,7 +319,6 @@ patch(
 # ==========================================
 # TEIL 4: CUSTOM HUD & VISUALS (KILLS, TIME, DAMAGE NUMBERS)
 # ==========================================
-
 patch(
     CLIENT_MAIN,
     "noref void() CSQC_WorldLoaded =",
@@ -335,7 +339,6 @@ patch(
     "dmg_text_str = \"KILL\";"
 )
 
-# Hier ist der Fix: Wir holen uns die Kills direkt aus dem Entity
 patch(
     CLIENT_MAIN,
     "\tif (cvar(\"chase_active\")) {\n\t\tChase_Update();\n\t}\n\n\t//does what you think it does\n\trenderscene();",
@@ -352,13 +355,7 @@ patch(
 \t\t
 \t\tsui_set_align([SUI_ALIGN_END, SUI_ALIGN_START]);
 \t\t
-\t\t// Kills direkt aus dem CSQC-Entity des Spielers lesen
-\t\tfloat real_kills = 0;
-\t\tentity my_player = findfloat(world, entnum, player_localentnum);
-\t\tif (my_player) {
-\t\t\treal_kills = my_player.kills;
-\t\t}
-\t\t
+\t\tfloat real_kills = stof(getplayerkeyvalue(player_localnum, "frags"));
 \t\tsui_text([-10, 10], MENU_TEXT_MEDIUM, sprintf("KILLS: %d", real_kills), [0.8, 0.2, 1], 1, 0);
 \t\t
 \t\tfloat mins = floor(cltime / 60);
@@ -377,7 +374,7 @@ patch(
 \t\tsui_end();
 \t}""",
     "Zeichne HUD (Kills direkt aus Entität)",
-    "entity my_player = findfloat(world, entnum, player_localentnum);"
+    "float real_kills = stof(getplayerkeyvalue(player_localnum, \"frags\"));"
 )
 
 # ==========================================
@@ -397,6 +394,68 @@ patch(
 \t}""",
     "Swap A/B buttons in menus",
     "if (scanx == K_GP_A) scanx = K_ESCAPE;"
+)
+
+# ==========================================
+# TEIL 6: EXTREME GORE MOD (Dismemberment & Blood)
+# ==========================================
+
+# 1. Mehr Blut bei Treffern
+patch(
+    CLIENTFUNCS_QC,
+    "#ifdef FTE\n\n\tFTE_RunParticleEffect(world, CSQC_PART_BLOODIMPACT, org, 0, world);\n\n#else\n\n\tparticle (org, vel*0.1, 73, damage*2);\n\n#endif // FTE",
+    """#ifdef FTE
+
+\tFTE_RunParticleEffect(world, CSQC_PART_BLOODIMPACT, org, 0, world);
+\t
+\t// NZP-M9 EXTREME GORE: Spawne mehr Blut bei starkem Schaden
+\tif (damage > 20) {
+\t\tFTE_RunParticleEffect(world, CSQC_PART_BLOODIMPACT, org, 0, world);
+\t\tFTE_RunParticleEffect(world, CSQC_PART_BLOODIMPACT, org, 0, world);
+\t}
+
+#else
+
+\tparticle (org, vel*0.1, 73, damage*2);
+
+#endif // FTE""",
+    "Extreme Gore: Mehr Blut",
+    "NZP-M9 EXTREME GORE: Spawne mehr Blut"
+)
+
+# 2. Arme viel leichter abtrennen
+patch(
+    DAMAGE_QC,
+    "if (WepDef_WeaponCanGibEnemy(self.weapon) && body_ent.larm.owner.rarm.deadflag && body_ent.larm.deadflag)",
+    "if (WepDef_WeaponCanGibEnemy(self.weapon) && (body_ent.larm.owner.rarm.deadflag || body_ent.larm.deadflag || random() < 0.5))",
+    "Extreme Gore: Linker Arm trennt leichter ab",
+    "random() < 0.5"
+)
+patch(
+    DAMAGE_QC,
+    "if (WepDef_WeaponCanGibEnemy(self.weapon) && body_ent.rarm.owner.larm.deadflag && body_ent.rarm.deadflag)",
+    "if (WepDef_WeaponCanGibEnemy(self.weapon) && (body_ent.rarm.owner.larm.deadflag || body_ent.rarm.deadflag || random() < 0.5))",
+    "Extreme Gore: Rechter Arm trennt leichter ab",
+    "random() < 0.5"
+)
+
+# 3. Fake Bein-Gibs bei Treffern im unteren Torso
+patch(
+    DAMAGE_QC,
+    'case "ai_zombie":\n\t\t\t\tif (trace_endpos_z < hit_ent.origin_z) {\n\t\t\t\t\tf_damage = damage*getWeaponMultiplier(self.weapon, self.perks, LOWER_TORSO_X);\n\t\t\t\t\thit_ent.hit_region = HIT_REGION_TORSO_LOWER;\n\t\t\t\t}',
+    '''case "ai_zombie":
+\t\t\t\tif (trace_endpos_z < hit_ent.origin_z) {
+\t\t\t\t\tf_damage = damage*getWeaponMultiplier(self.weapon, self.perks, LOWER_TORSO_X);
+\t\t\t\t\thit_ent.hit_region = HIT_REGION_TORSO_LOWER;
+\t\t\t\t\t
+\t\t\t\t\t// NZP-M9 EXTREME GORE: Fake Bein-Gibs spawnen
+\t\t\t\t\tif (WepDef_WeaponCanGibEnemy(self.weapon) && random() < 0.4) {
+\t\t\t\t\t\tspawn_gibs(trace_endpos);
+\t\t\t\t\t\tSpawnBlood(trace_endpos, trace_endpos, 100);
+\t\t\t\t\t}
+\t\t\t\t}''',
+    "Extreme Gore: Bein-Gibs spawnen",
+    "Fake Bein-Gibs spawnen"
 )
 
 print("\n=== Alle Patches erfolgreich angewendet. ===")
