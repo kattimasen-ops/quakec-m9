@@ -2,6 +2,7 @@
 # NZP-M9 Patches: Server-Browser Gamepad-Navigation & Performance-Optimierungen
 
 import sys
+import re
 from pathlib import Path
 
 def patch(path: Path, anchor: str, replacement: str, description: str, marker: str, required: bool = True) -> None:
@@ -36,6 +37,22 @@ def patch(path: Path, anchor: str, replacement: str, description: str, marker: s
 
     path.write_text(content.replace(anchor, replacement, 1), encoding="utf-8")
     print(f"[OK]   {description}")
+
+def patch_regex(path: Path, pattern: str, replacement: str, description: str, marker: str):
+    if not path.exists():
+        print(f"[FATAL] {path} existiert nicht.")
+        sys.exit(1)
+    content = path.read_text(encoding="utf-8")
+    if marker in content:
+        print(f"[SKIP] {description}: bereits gepatcht")
+        return
+    new_content, count = re.subn(pattern, replacement, content, count=1, flags=re.DOTALL)
+    if count == 1:
+        path.write_text(new_content, encoding="utf-8")
+        print(f"[OK]   {description}")
+    else:
+        print(f"[FATAL] {description}: Regex-Muster nicht gefunden in {path}")
+        sys.exit(1)
 
 def ensure_line(path: Path, line: str, description: str) -> None:
     if not path.exists():
@@ -301,41 +318,37 @@ patch(
 )
 
 # ==========================================
-# TEIL 2: VIDEO-MENÜ OPTIMIERUNGEN (inkl. neuer Optionen)
+# TEIL 2: VIDEO-MENÜ OPTIMIERUNGEN (REGEX FÜR SICHERHEIT)
 # ==========================================
 
-# 1. Button-Array erweitern (13 -> 15)
-patch(
+patch_regex(
     MENU_VIDE,
-    anchor='string menu_video_buttons[13] = {"vm_resol", "vm_fulls", "vm_shfps", "vm_maxps", "vm_vsync", "vm_fov", "vm_gamma", "vm_uwide", "vm_parts", "vm_decal", "vm_filtr", "vm_apply", "vm_back"};',
-    replacement='string menu_video_buttons[15] = {"vm_resol", "vm_fulls", "vm_shfps", "vm_maxps", "vm_vsync", "vm_fov", "vm_gamma", "vm_uwide", "vm_parts", "vm_decal", "vm_dynlgt", "vm_shdw", "vm_filtr", "vm_apply", "vm_back"};',
-    description="E1: Button-Array um Dynamic Lights & Shadows erweitern",
-    marker='"vm_dynlgt", "vm_shdw"',
+    r"string menu_video_buttons\[\d+\] = \{.*?\};",
+    'string menu_video_buttons[15] = {"vm_resol", "vm_fulls", "vm_shfps", "vm_maxps", "vm_vsync", "vm_fov", "vm_gamma", "vm_uwide", "vm_parts", "vm_decal", "vm_dynlgt", "vm_shdw", "vm_filtr", "vm_apply", "vm_back"};',
+    "E1: Button-Array erweitern",
+    '"vm_dynlgt", "vm_shdw"'
 )
 
-# 2. Variablen hinzufügen
-patch(
+patch_regex(
     MENU_VIDE,
-    anchor='float current_particles;\nfloat current_decals;\nfloat current_filter;',
-    replacement='float current_particles;\nfloat current_decals;\nfloat current_dynlight;\nfloat current_shadows;\nfloat current_filter;',
-    description="E2: current_dynlight & current_shadows Variablen",
-    marker='float current_dynlight;',
+    r"float current_particles;\s*float current_decals;\s*float current_filter;",
+    "float current_particles;\nfloat current_decals;\nfloat current_dynlight;\nfloat current_shadows;\nfloat current_filter;",
+    "E2: current_dynlight & current_shadows Variablen",
+    'float current_dynlight;'
 )
 
-# 3. Werte beim Öffnen des Menüs auslesen
-patch(
+patch_regex(
     MENU_VIDE,
-    anchor='current_particles = cvar("nzp_particles");\n    current_decals = cvar("nzp_decals");\n    current_filter =',
-    replacement='current_particles = cvar("nzp_particles");\n    current_decals = cvar("nzp_decals");\n    current_dynlight = cvar("r_dynamic");\n    current_shadows = cvar("r_shadows");\n    current_filter =',
-    description="E3: Dynamic Lights & Shadows auslesen",
-    marker='current_dynlight = cvar("r_dynamic");',
+    r"current_particles = cvar\(\"nzp_particles\"\);\s*current_decals = cvar\(\"nzp_decals\"\);\s*current_filter =",
+    'current_particles = cvar("nzp_particles");\n    current_decals = cvar("nzp_decals");\n    current_dynlight = cvar("r_dynamic");\n    current_shadows = cvar("r_shadows");\n    current_filter =',
+    "E3: Dynamic Lights & Shadows auslesen",
+    'current_dynlight = cvar("r_dynamic");'
 )
 
-# 4. Toggle-Funktionen
-patch(
+patch_regex(
     MENU_VIDE,
-    anchor='void() Menu_Video_UpdateUltrawide =',
-    replacement='''void() Menu_Video_UpdateDynLight =
+    r"void\(\) Menu_Video_UpdateUltrawide =",
+    '''void() Menu_Video_UpdateDynLight =
 {
     Menu_PlaySound(MENU_SND_ENTER);
     current_dynlight = !current_dynlight;
@@ -350,15 +363,14 @@ void() Menu_Video_UpdateShadows =
 };
 
 void() Menu_Video_UpdateUltrawide =''',
-    description="E4: Funktionen für Dynamic Lights & Shadows",
-    marker='Menu_Video_UpdateDynLight',
+    "E4: Funktionen für Dynamic Lights & Shadows",
+    "Menu_Video_UpdateDynLight"
 )
 
-# 5. UI-Code anpassen (Indizes verschieben)
-patch(
+patch_regex(
     MENU_VIDE,
-    anchor='// Texture Filtering\n    Menu_Button(11, "vm_filtr", "TEXTURE FILTERING", "Choose 3D Environment Filtering Mode.") ? Menu_Video_UpdateFiltering() : 0;\n    string filt_string = "";\n    if (current_filter) filt_string = "NEAREST";\n    else filt_string = "LINEAR";\n    Menu_DrawOptionValue(11, filt_string);',
-    replacement='''// Dynamic Lights
+    r"// Texture Filtering\s*Menu_Button\(\d+, \"vm_filtr\".*?Menu_DrawOptionValue\(\d+, filt_string\);",
+    '''// Dynamic Lights
     Menu_Button(11, "vm_dynlgt", "DYNAMIC LIGHTS", "Toggle Realtime Lights (Huge Performance Boost).") ? Menu_Video_UpdateDynLight() : 0;
     string dynlgt_string = "";
     if (current_dynlight) dynlgt_string = "ENABLED";
@@ -378,8 +390,8 @@ patch(
     if (current_filter) filt_string = "NEAREST";
     else filt_string = "LINEAR";
     Menu_DrawOptionValue(13, filt_string);''',
-    description="E5: UI-Code für Dynamic Lights & Shadows einfügen",
-    marker='vm_dynlgt", "DYNAMIC LIGHTS',
+    "E5: UI-Code für Dynamic Lights & Shadows einfügen",
+    'vm_dynlgt", "DYNAMIC LIGHTS'
 )
 
 print("\n=== Alle Patches erfolgreich angewendet. ===")
