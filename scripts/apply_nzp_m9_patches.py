@@ -95,6 +95,12 @@ float kill_streak_last_time;
 string kill_streak_text;
 float heartbeat_time;
 float ambient_dust_time;
+
+// NZP-M9 Atmosphäre & Nebel
+float nzp_is_indoor;
+float nzp_fog_check_time;
+float nzp_last_indoor_state;
+float nzp_fog_initialized;
 """
 append_safe(CUSTOM_QC, custom_globals, "Füge M9-Globals zu custom.qc hinzu", "// NZP-M9 Custom Globals")
 
@@ -280,24 +286,28 @@ patch(MAIN_QC, 'build_datetime = fgets(file);', 'build_datetime = "M9 Pro Custom
 patch(CLIENT_MAIN, "void(float apiver, string enginename, float enginever) CSQC_Init =\n{",
     """void(float apiver, string enginename, float enginever) CSQC_Init =
 {
-	// NZP-M9 Initialisierungen
-	gore_enabled = 1;
-	gore_kill_light = 300;
-	gore_blood_count = 2;
-	dmg_text_time = 0;
-	dmg_text_str = "";
-	dmg_indicator_alpha = 0;
-	dmg_last_health = 100;
-	screen_shake_intensity = 0;
-	hitmarker_sound_time = 0;
-	fov_punch_time = 0;
-	kill_streak_count = 0;
-	kill_streak_reset_time = 0;
-	kill_streak_display_time = 0;
-	kill_streak_last_time = 0;
-	kill_streak_text = "";
-	heartbeat_time = 0;
-	ambient_dust_time = 0;
+\t// NZP-M9 Initialisierungen
+\tgore_enabled = 1;
+\tgore_kill_light = 300;
+\tgore_blood_count = 2;
+\tdmg_text_time = 0;
+\tdmg_text_str = "";
+\tdmg_indicator_alpha = 0;
+\tdmg_last_health = 100;
+\tscreen_shake_intensity = 0;
+\thitmarker_sound_time = 0;
+\tfov_punch_time = 0;
+\tkill_streak_count = 0;
+\tkill_streak_reset_time = 0;
+\tkill_streak_display_time = 0;
+\tkill_streak_last_time = 0;
+\tkill_streak_text = "";
+\theartbeat_time = 0;
+\tambient_dust_time = 0;
+\tnzp_is_indoor = FALSE;
+\tnzp_fog_check_time = 0;
+\tnzp_last_indoor_state = FALSE;
+\tnzp_fog_initialized = FALSE;
 """,
     "Initialisiere Variablen in CSQC_Init", "// NZP-M9 Initialisierungen")
 
@@ -355,81 +365,202 @@ if "hitmark_ignore_time <= time" not in CLIENT_MAIN.read_text(encoding="utf-8"):
 # ==========================================
 patch(CLIENT_MAIN, "\tCamera_AimSnap(camang);\n\n\tcamang[0] += cam_snap_difference[0];\n\tcamang[1] += cam_snap_difference[1];\n\tcamang[2] += cam_snap_difference[2];\n\n\tsetviewprop(VF_ANGLES, camang);",
     """\tCamera_AimSnap(camang);
-	camang[0] += cam_snap_difference[0];
-	camang[1] += cam_snap_difference[1];
-	camang[2] += cam_snap_difference[2];
-	
-	if (screen_shake_intensity > 0) {
-		camang[0] += (random() * 2 - 1) * screen_shake_intensity * 0.3;
-		camang[1] += (random() * 2 - 1) * screen_shake_intensity * 0.3;
-		camang[2] += (random() * 2 - 1) * screen_shake_intensity * 0.1;
-	}
-	setviewprop(VF_ANGLES, camang);
+\tcamang[0] += cam_snap_difference[0];
+\tcamang[1] += cam_snap_difference[1];
+\tcamang[2] += cam_snap_difference[2];
+\t
+\tif (screen_shake_intensity > 0) {
+\t\tcamang[0] += (random() * 2 - 1) * screen_shake_intensity * 0.3;
+\t\tcamang[1] += (random() * 2 - 1) * screen_shake_intensity * 0.3;
+\t\tcamang[2] += (random() * 2 - 1) * screen_shake_intensity * 0.1;
+\t}
+\tsetviewprop(VF_ANGLES, camang);
 
-	float base_fov = autocvar(fov, 90) * getstatf(STAT_VIEWZOOM);
-	if (time < fov_punch_time) {
-		float punch_factor = (fov_punch_time - time) / 0.08;
-		base_fov = base_fov - (punch_factor * 8);
-	}
-	setviewprop(VF_AFOV, base_fov);""",
+\tfloat base_fov = autocvar(fov, 90) * getstatf(STAT_VIEWZOOM);
+\tif (time < fov_punch_time) {
+\t\tfloat punch_factor = (fov_punch_time - time) / 0.08;
+\t\tbase_fov = base_fov - (punch_factor * 8);
+\t}
+\tsetviewprop(VF_AFOV, base_fov);""",
     "CSQC_UpdateView: Kamera-Effekte", "// NZP-M9: Screen-Shake")
 
 patch(CLIENT_MAIN, "setviewprop(VF_DRAWCROSSHAIR, 0);", "setviewprop(VF_DRAWCROSSHAIR, 0);\n\tsetviewprop(VF_DRAWCROSSHAIR, 0);", "Disable default Crosshair", "setviewprop(VF_DRAWCROSSHAIR, 0);\n\tsetviewprop(VF_DRAWCROSSHAIR, 0);")
 
-patch(CLIENT_MAIN, "\tif (cvar(\"chase_active\")) {\n\t\tChase_Update();\n\t}\n\n\t//does what you think it does\n\trenderscene();",
-    """\tif (cvar("chase_active")) {
+# HUD-Block inkl. Atmosphäre-Aufruf vor renderscene()
+hud_block = """\tif (cvar("chase_active")) {
 \t\tChase_Update();
 \t}
 
-	//does what you think it does
+\t// NZP-M9: Atmosphäre (Nebel) vor dem Rendern aktualisieren
+\tCSQC_UpdateAtmosphere();
+
+\t//does what you think it does
 \trenderscene();
 
 \t// --- NZP-M9 CUSTOM HUD ---
-	
-	float current_health = getstatf(STAT_HEALTH);
-	if (current_health < dmg_last_health) {
-		dmg_indicator_alpha = 0.6;
-		screen_shake_intensity += 3;
-	}
-	dmg_last_health = current_health;
-	dmg_indicator_alpha -= frametime * 2;
-	if (dmg_indicator_alpha < 0) dmg_indicator_alpha = 0;
-	
-	if (dmg_indicator_alpha > 0) {
-		float edge_size = 20;
-		drawfill([0, 0], [g_width, edge_size], [1, 0, 0], dmg_indicator_alpha, 0);
-		drawfill([0, g_height - edge_size], [g_width, edge_size], [1, 0, 0], dmg_indicator_alpha, 0);
-		drawfill([0, edge_size], [edge_size, g_height - edge_size*2], [1, 0, 0], dmg_indicator_alpha, 0);
-		drawfill([g_width - edge_size, edge_size], [edge_size, g_height - edge_size*2], [1, 0, 0], dmg_indicator_alpha, 0);
-	}
-	
-	screen_shake_intensity -= frametime * 25;
-	if (screen_shake_intensity < 0) screen_shake_intensity = 0;
-	
-	if (current_health < 30 && !(getstatf(STAT_PERKS) & P_DEAD) && !getstatf(STAT_WEAPONZOOM)) {
-		float pulse = (sin(cltime * 8) + 1) * 0.5;
-		drawfill([0, 0], [g_width, g_height], [1, 0, 0], pulse * 0.4, 0);
-		if (time > heartbeat_time) {
-			localsound_enhanced("sounds/player/heart.wav", 0, 1.0);
-			heartbeat_time = time + 1.0;
-		}
-	}
-	
-	// Ambient Dust (Atmosphäre)
-	if (time > ambient_dust_time && cvar("nzp_particles")) {
-		ambient_dust_time = time + 0.1;
-		vector view_ang = getviewprop(VF_ANGLES);
-		makevectors(view_ang);
-		vector dust_pos = getviewprop(VF_ORIGIN) + v_forward * 200 + v_right * (random()*400-200) + v_up * (random()*400-200);
-		pointparticles(particleeffectnum("weapons.impact"), dust_pos, '0 0 0', 1);
-	}
-	
-	if (!getstatf(STAT_WEAPONZOOM) && !cvar("chase_active")) {
-		float spread = 4.0 + vlen(playerVelocity) * 0.05 + fabs(gun_kick[0]) * 2.0;
-		vector cx_color = [0.8, 0.2, 1];
-		if (current_health < 30) cx_color = [1, 0, 0];
-		
-		drawfill([g_width*0.5 - 1, g_height*0.5 - spread - 6], [2, 6], cx_color, 1, 0);
-		drawfill([g_width*0.5 - 1, g_height*0.5 + spread], [2, 6], cx_color, 1, 0);
-		drawfill([g_width*0.5 - spread - 6, g_height*0.5 - 1], [6, 2], cx_color, 1, 0);
-	
+\t
+\tfloat current_health = getstatf(STAT_HEALTH);
+\tif (current_health < dmg_last_health) {
+\t\tdmg_indicator_alpha = 0.6;
+\t\tscreen_shake_intensity += 3;
+\t}
+\tdmg_last_health = current_health;
+\tdmg_indicator_alpha -= frametime * 2;
+\tif (dmg_indicator_alpha < 0) dmg_indicator_alpha = 0;
+\t
+\tif (dmg_indicator_alpha > 0) {
+\t\tfloat edge_size = 20;
+\t\tdrawfill([0, 0], [g_width, edge_size], [1, 0, 0], dmg_indicator_alpha, 0);
+\t\tdrawfill([0, g_height - edge_size], [g_width, edge_size], [1, 0, 0], dmg_indicator_alpha, 0);
+\t\tdrawfill([0, edge_size], [edge_size, g_height - edge_size*2], [1, 0, 0], dmg_indicator_alpha, 0);
+\t\tdrawfill([g_width - edge_size, edge_size], [edge_size, g_height - edge_size*2], [1, 0, 0], dmg_indicator_alpha, 0);
+\t}
+\t
+\tscreen_shake_intensity -= frametime * 25;
+\tif (screen_shake_intensity < 0) screen_shake_intensity = 0;
+\t
+\tif (current_health < 30 && !(getstatf(STAT_PERKS) & P_DEAD) && !getstatf(STAT_WEAPONZOOM)) {
+\t\tfloat pulse = (sin(cltime * 8) + 1) * 0.5;
+\t\tdrawfill([0, 0], [g_width, g_height], [1, 0, 0], pulse * 0.4, 0);
+\t\tif (time > heartbeat_time) {
+\t\t\tlocalsound_enhanced("sounds/player/heart.wav", 0, 1.0);
+\t\t\theartbeat_time = time + 1.0;
+\t\t}
+\t}
+\t
+\t// Ambient Dust (nur im Außenbereich)
+\tif (!nzp_last_indoor_state && time > ambient_dust_time && cvar("nzp_particles")) {
+\t\tambient_dust_time = time + 0.1;
+\t\tvector view_ang = getviewprop(VF_ANGLES);
+\t\tmakevectors(view_ang);
+\t\tvector dust_pos = getviewprop(VF_ORIGIN) + v_forward * 200 + v_right * (random()*400-200) + v_up * (random()*400-200);
+\t\tpointparticles(particleeffectnum("weapons.impact"), dust_pos, '0 0 0', 1);
+\t}
+\t
+\tif (!getstatf(STAT_WEAPONZOOM) && !cvar("chase_active")) {
+\t\tfloat spread = 4.0 + vlen(playerVelocity) * 0.05 + fabs(gun_kick[0]) * 2.0;
+\t\tvector cx_color = [0.8, 0.2, 1];
+\t\tif (current_health < 30) cx_color = [1, 0, 0];
+\t\t
+\t\tdrawfill([g_width*0.5 - 1, g_height*0.5 - spread - 6], [2, 6], cx_color, 1, 0);
+\t\tdrawfill([g_width*0.5 - 1, g_height*0.5 + spread], [2, 6], cx_color, 1, 0);
+\t\tdrawfill([g_width*0.5 - spread - 6, g_height*0.5 - 1], [6, 2], cx_color, 1, 0);
+\t\tdrawfill([g_width*0.5 + spread, g_height*0.5 - 1], [6, 2], cx_color, 1, 0);
+\t\tdrawfill([g_width*0.5 - 1, g_height*0.5 - 1], [2, 2], cx_color, 0.5, 0);
+\t}
+\t
+\tif (serverkey("pausestate") != "1") {
+\t\tsui_begin(g_width, g_height);
+\t\tsui_set_align([SUI_ALIGN_END, SUI_ALIGN_START]);
+\t\t
+\t\tfloat real_kills = 0;
+\t\tentity player_ent = find(world, classname, "player");
+\t\twhile (player_ent != world) {
+\t\t\tif (player_ent.playernum == player_localnum + 1) {
+\t\t\t\treal_kills = player_ent.kills;
+\t\t\t\tbreak;
+\t\t\t}
+\t\t\tplayer_ent = find(player_ent, classname, "player");
+\t\t}
+\t\t
+\t\tsui_text([-10, 10], MENU_TEXT_MEDIUM, sprintf("KILLS: %d", real_kills), [0.8, 0.2, 1], 1, 0);
+\t\t
+\t\tfloat mins = floor(cltime / 60);
+\t\tfloat secs = floor(cltime % 60);
+\t\tsui_text([-10, 30], MENU_TEXT_SMALL, sprintf("TIME: %02d:%02d", mins, secs), [1, 1, 1], 1, 0);
+
+\t\tif (time < dmg_text_time) {
+\t\t\tfloat diff = dmg_text_time - time;
+\t\t\tfloat offset_y = 60 - ((0.8 - diff) * 40);
+\t\t\tvector dmg_color = [1, 0.2, 1];
+\t\t\tif (dmg_text_str == "KILL") dmg_color = [1, 0, 0];
+\t\t\tsui_set_align([SUI_ALIGN_CENTER, SUI_ALIGN_CENTER]);
+\t\t\tsui_text([0, -offset_y], MENU_TEXT_MEDIUM, dmg_text_str, dmg_color, diff, 0);
+\t\t}
+\t\t
+\t\tif (time < kill_streak_display_time) {
+\t\t\tsui_set_align([SUI_ALIGN_CENTER, SUI_ALIGN_CENTER]);
+\t\t\tsui_text([0, -120], MENU_TEXT_LARGE, kill_streak_text, [1, 0.5, 0], 1, 0);
+\t\t}
+\t\tsui_end();
+\t}"""
+
+patch(CLIENT_MAIN, "\tif (cvar(\"chase_active\")) {\n\t\tChase_Update();\n\t}\n\n\t//does what you think it does\n\trenderscene();",
+    hud_block,
+    "CSQC_UpdateView: Custom HUD, Crosshair, Low-Health & Dust", "--- NZP-M9 CUSTOM HUD ---")
+
+# ==========================================
+# TEIL 6: ATMOSPHÄRE & NEBEL
+# ==========================================
+# Funktionen vor CSQC_UpdateView einfügen
+ATMO_FUNCS = """
+// ==========================================
+// NZP-M9: Atmosphäre & Nebel
+// ==========================================
+
+// Erkennt, ob der Spieler sich in einem Innenraum befindet.
+// Trace vom Spieler nach oben: Trifft er CONTENT_SKY, ist er draußen.
+// Trifft er einen soliden Brush (kein Sky), ist er drinnen.
+float() CSQC_IsIndoor =
+{
+\tvector start = playerOrigin + [0, 0, 16];
+\tvector end = start + [0, 0, 4096];
+\ttraceline(start, end, false, world);
+
+\t// Nichts getroffen -> offener Himmel
+\tif (trace_fraction == 1) {
+\t\treturn FALSE;
+\t}
+
+\t// Sky getroffen -> draußen
+\tif (pointcontents(trace_endpos) == CONTENT_SKY) {
+\t\treturn FALSE;
+\t}
+
+\t// Solider Brush getroffen -> drinnen
+\treturn TRUE;
+};
+
+// Aktualisiert Nebel-Cvars je nach Innen/Außen.
+// Wird nur bei Zustandswechsel ausgeführt (kein Cvar-Spam).
+void() CSQC_UpdateAtmosphere =
+{
+\t// Nur alle 0.5 Sekunden prüfen (Performance)
+\tif (time < nzp_fog_check_time) {
+\t\treturn;
+\t}
+\tnzp_fog_check_time = time + 0.5;
+
+\tfloat indoor = CSQC_IsIndoor();
+\tnzp_is_indoor = indoor;
+
+\t// Nur bei Zustandswechsel oder Initialisierung Cvars setzen
+\tif (indoor != nzp_last_indoor_state || !nzp_fog_initialized) {
+\t\tnzp_last_indoor_state = indoor;
+\t\tnzp_fog_initialized = TRUE;
+
+\t\tif (indoor) {
+\t\t\t// INNEN: dichter, kühlerer Nebel
+\t\t\tcvar_set("r_fog", "1");
+\t\t\tcvar_set("r_fog_color", "0.15 0.15 0.20");
+\t\t\tcvar_set("r_fog_start", "80");
+\t\t\tcvar_set("r_fog_end", "700");
+\t\t} else {
+\t\t\t// AUSSEN: weiter, natürlicher Nebel
+\t\t\tcvar_set("r_fog", "1");
+\t\t\tcvar_set("r_fog_color", "0.45 0.45 0.50");
+\t\t\tcvar_set("r_fog_start", "500");
+\t\t\tcvar_set("r_fog_end", "3000");
+\t\t}
+\t}
+};
+
+// ==========================================
+"""
+patch(CLIENT_MAIN, "noref void(float width, float height, float menushown) CSQC_UpdateView =",
+    ATMO_FUNCS + "noref void(float width, float height, float menushown) CSQC_UpdateView =",
+    "Atmosphäre-Funktionen (CSQC_IsIndoor, CSQC_UpdateAtmosphere) einfügen",
+    "// NZP-M9: Atmosphäre & Nebel")
+
+print("\n=== Alle Patches erfolgreich angewendet (idempotent). ===")
+sys.exit(0)
