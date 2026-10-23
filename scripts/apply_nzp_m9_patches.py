@@ -46,7 +46,6 @@ MENU_VIDE = BASE / "menu_vide.qc"
 MENU_MAIN_MENU = BASE / "m_menu.qc"
 MAIN_QC = BASE / "main.qc"
 CLIENT_MAIN = CLIENT / "main.qc"
-CLIENT_HUD = CLIENT / "hud.qc"
 FTE_QC = CLIENT / "defs/fte.qc"
 MENU_DEFS = BASE / "defs/menu_defs.qc"
 MENU_CRED = BASE / "menu_cred.qc"
@@ -313,7 +312,7 @@ patch(
 )
 
 # ==========================================
-# TEIL 4: CUSTOM HUD & VISUALS (KILLS oben rechts, TIME, DAMAGE NUMBERS)
+# TEIL 4: CUSTOM HUD & VISUALS (KILLS, TIME, DAMAGE NUMBERS)
 # ==========================================
 
 # 1. Variablen in main.qc (CSQC) hinzufügen
@@ -323,22 +322,32 @@ patch(
     """// --- NZP-M9 Custom HUD Variablen ---
 float dmg_text_time;
 string dmg_text_str;
+float m9_custom_kills;
 
 void(float width, float height, float menushown) CSQC_UpdateView =""",
-    "Füge HUD-Variablen für Vignette/Damage hinzu",
-    "float dmg_text_time;"
+    "Füge HUD-Variablen für Kills/Damage hinzu",
+    "float m9_custom_kills;"
 )
 
-# 2. Damage Numbers im CSQC_Parse_Event triggern
+# 2. Kills zurücksetzen bei Mapstart
+patch(
+    CLIENT_MAIN,
+    "noref void() CSQC_WorldLoaded =\n{",
+    "noref void() CSQC_WorldLoaded =\n{\n\tm9_custom_kills = 0;",
+    "Reset Killcounter bei Mapstart",
+    "m9_custom_kills = 0;"
+)
+
+# 3. Damage Numbers & Kills im CSQC_Parse_Event triggern
 patch(
     CLIENT_MAIN,
     'case 3:\n\t\t\t\t\tif (hitmark_ignore_time > time)\n\t\t\t\t\t\treturn;\n\n\t\t\t\t\thitmark_type = var_1;',
-    'case 3:\n\t\t\t\t\tif (hitmark_ignore_time > time)\n\t\t\t\t\t\treturn;\n\n\t\t\t\t\thitmark_type = var_1;\n\t\t\t\t\t\n\t\t\t\t\t// NZP-M9 Damage Numbers Trigger\n\t\t\t\t\tif (hitmark_type == 1) {\n\t\t\t\t\t\tdmg_text_str = "KILL";\n\t\t\t\t\t} else {\n\t\t\t\t\t\tdmg_text_str = "HIT";\n\t\t\t\t\t}\n\t\t\t\t\tdmg_text_time = time + 0.8;',
-    "Trigger Damage Numbers on Hit",
-    "dmg_text_str = \"KILL\";"
+    'case 3:\n\t\t\t\t\tif (hitmark_ignore_time > time)\n\t\t\t\t\t\treturn;\n\n\t\t\t\t\thitmark_type = var_1;\n\t\t\t\t\t\n\t\t\t\t\t// NZP-M9 Damage Numbers & Kill Counter Trigger\n\t\t\t\t\tif (hitmark_type == 1) {\n\t\t\t\t\t\tdmg_text_str = "KILL";\n\t\t\t\t\t\tm9_custom_kills += 1;\n\t\t\t\t\t} else {\n\t\t\t\t\t\tdmg_text_str = "HIT";\n\t\t\t\t\t}\n\t\t\t\t\tdmg_text_time = time + 0.8;',
+    "Trigger Damage Numbers und Kills",
+    "m9_custom_kills += 1;"
 )
 
-# 3. Damage Numbers, Kill-Counter (oben rechts) und Time im CSQC_UpdateView zeichnen
+# 4. HUD Zeichnen (mit Pause-Check)
 patch(
     CLIENT_MAIN,
     "\tif (cvar(\"chase_active\")) {\n\t\tChase_Update();\n\t}\n\n\t//does what you think it does\n\trenderscene();",
@@ -350,31 +359,33 @@ patch(
 \trenderscene();
 
 \t// --- NZP-M9 KILLS, TIME & DAMAGE NUMBERS ---
-\tsui_begin(g_width, g_height);
-\t
-\tsui_set_align([SUI_ALIGN_END, SUI_ALIGN_START]);
-\t
-\t// Kill Counter oben rechts
-\tfloat my_kills = getstatf(STAT_KILLEDMONSTERS);
-\tsui_text([-10, 10], MENU_TEXT_MEDIUM, sprintf("KILLS: %d", my_kills), [0.8, 0.2, 1], 1, 0);
-\t
-\t// Survival Time
-\tfloat mins = floor(cltime / 60);
-\tfloat secs = floor(cltime % 60);
-\tsui_text([-10, 30], MENU_TEXT_SMALL, sprintf("TIME: %02d:%02d", mins, secs), [1, 1, 1], 1, 0);
+\t// Verhindert, dass das HUD das Pause-Menü blockiert
+\tif (serverkey("pausestate") != "1") {
+\t\tsui_begin(g_width, g_height);
+\t\t
+\t\tsui_set_align([SUI_ALIGN_END, SUI_ALIGN_START]);
+\t\t
+\t\t// Kill Counter oben rechts
+\t\tsui_text([-10, 10], MENU_TEXT_MEDIUM, sprintf("KILLS: %d", m9_custom_kills), [0.8, 0.2, 1], 1, 0);
+\t\t
+\t\t// Survival Time
+\t\tfloat mins = floor(cltime / 60);
+\t\tfloat secs = floor(cltime % 60);
+\t\tsui_text([-10, 30], MENU_TEXT_SMALL, sprintf("TIME: %02d:%02d", mins, secs), [1, 1, 1], 1, 0);
 
-\t// Damage Numbers (Kleiner und näher am Fadenkreuz)
-\tif (time < dmg_text_time) {
-\t\tfloat diff = dmg_text_time - time; // 0.8 -> 0.0
-\t\tfloat offset_y = 60 - ((0.8 - diff) * 40); // Floatet von 60 nach 20 hoch
-\t\tvector dmg_color = [1, 0.2, 1]; // Lila
-\t\tif (dmg_text_str == "KILL") dmg_color = [1, 0, 0]; // Rot bei Kill
+\t\t// Damage Numbers (Kleiner und näher am Fadenkreuz)
+\t\tif (time < dmg_text_time) {
+\t\t\tfloat diff = dmg_text_time - time; // 0.8 -> 0.0
+\t\t\tfloat offset_y = 60 - ((0.8 - diff) * 40); // Floatet von 60 nach 20 hoch
+\t\t\tvector dmg_color = [1, 0.2, 1]; // Lila
+\t\t\tif (dmg_text_str == "KILL") dmg_color = [1, 0, 0]; // Rot bei Kill
 
-\t\tsui_set_align([SUI_ALIGN_CENTER, SUI_ALIGN_CENTER]);
-\t\tsui_text([0, -offset_y], MENU_TEXT_MEDIUM, dmg_text_str, dmg_color, diff, 0);
-\t}
-\tsui_end();""",
-    "Zeichne Kill-Counter (oben rechts), Time und Damage Numbers",
+\t\t\tsui_set_align([SUI_ALIGN_CENTER, SUI_ALIGN_CENTER]);
+\t\t\tsui_text([0, -offset_y], MENU_TEXT_MEDIUM, dmg_text_str, dmg_color, diff, 0);
+\t\t}
+\t\tsui_end();
+\t}""",
+    "Zeichne HUD (nur wenn nicht pausiert)",
     "--- NZP-M9 KILLS, TIME & DAMAGE NUMBERS ---"
 )
 
