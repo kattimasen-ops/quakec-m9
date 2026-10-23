@@ -2,6 +2,8 @@
 #pragma target fte_5768
 #pragma progs_dat "../build/fte/csprogs.dat"
 
+// WICHTIG: KEIN #define MENU hier! Das ist wichtig für das In-Game-Pause-Menü.
+
 #pragma includedir "../source/client/"
 #pragma includedir "../source/shared/"
 #pragma includedir "../source/menu/"
@@ -14,7 +16,24 @@ draw.qc
 
 sui_sys.qc
 m_menu.qc
-menu_paus.qc         // WICHTIG: Das Pause-Menü für In-Game!
+menu_main.qc
+menu_maps.qc
+menu_paus.qc         // <-- Das In-Game-Menü
+menu_opts.qc
+menu_vide.qc
+menu_audi.qc
+menu_ctrl.qc
+menu_gpad.qc
+menu_bind.qc
+menu_aces.qc
+menu_coop.qc
+menu_loby.qc
+menu_bios.qc
+menu_gset.qc
+menu_cred.qc
+menu_load.qc
+
+../source/menu/main.qc // <-- Wichtig für m_toggle
 
 sound_enhanced.qc
 weapon_stats.qc
