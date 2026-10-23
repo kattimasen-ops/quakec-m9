@@ -2,14 +2,18 @@
 #pragma target fte_5768
 #pragma progs_dat "../build/fte/menu.dat"
 
+// WICHTIG: Definiert MENU, damit alle Menü-Blöcke aktiviert werden
+#define MENU
+
+// Suchpfade (Reihenfolge ist wichtig)
+#pragma includedir "../source/menu/"
 #pragma includedir "../source/client/"
 #pragma includedir "../source/shared/"
-#pragma includedir "../source/menu/"
 
 #includelist
 defs/fte.qc
 defs/menu_defs.qc
-draw.qc
+../source/client/draw.qc
 sui_sys.qc
 m_menu.qc
 
@@ -29,5 +33,6 @@ menu_gset.qc
 menu_loby.qc
 menu_bios.qc
 
-main.qc
+// Expliziter Pfad: Verhindert, dass client/main.qc geladen wird
+../source/menu/main.qc
 #endlist
