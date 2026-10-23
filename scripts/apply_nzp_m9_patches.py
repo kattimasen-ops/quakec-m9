@@ -315,39 +315,29 @@ patch(
 # TEIL 4: CUSTOM HUD & VISUALS (KILLS, TIME, DAMAGE NUMBERS)
 # ==========================================
 
-# 1. Variablen deklarieren (vor CSQC_WorldLoaded, damit sie früh genug bekannt sind)
+# 1. Variablen deklarieren
 patch(
     CLIENT_MAIN,
     "noref void() CSQC_WorldLoaded =",
     """// --- NZP-M9 Custom HUD Variablen ---
 float dmg_text_time;
 string dmg_text_str;
-float m9_custom_kills;
 
 noref void() CSQC_WorldLoaded =""",
     "Deklariere HUD-Variablen",
-    "float m9_custom_kills;"
+    "float dmg_text_time;"
 )
 
-# 2. Kills zurücksetzen bei Mapstart
-patch(
-    CLIENT_MAIN,
-    "noref void() CSQC_WorldLoaded =\n{",
-    "noref void() CSQC_WorldLoaded =\n{\n\tm9_custom_kills = 0;",
-    "Reset Killcounter bei Mapstart",
-    "m9_custom_kills = 0;"
-)
-
-# 3. Damage Numbers & Kills im CSQC_Parse_Event triggern
+# 2. Damage Numbers im CSQC_Parse_Event triggern
 patch(
     CLIENT_MAIN,
     'case 3:\n\t\t\t\t\tif (hitmark_ignore_time > time)\n\t\t\t\t\t\treturn;\n\n\t\t\t\t\thitmark_type = var_1;',
-    'case 3:\n\t\t\t\t\tif (hitmark_ignore_time > time)\n\t\t\t\t\t\treturn;\n\n\t\t\t\t\thitmark_type = var_1;\n\t\t\t\t\t\n\t\t\t\t\t// NZP-M9 Damage Numbers & Kill Counter Trigger\n\t\t\t\t\tif (hitmark_type == 1) {\n\t\t\t\t\t\tdmg_text_str = "KILL";\n\t\t\t\t\t\tm9_custom_kills += 1;\n\t\t\t\t\t} else {\n\t\t\t\t\t\tdmg_text_str = "HIT";\n\t\t\t\t\t}\n\t\t\t\t\tdmg_text_time = time + 0.8;',
-    "Trigger Damage Numbers und Kills",
-    "m9_custom_kills += 1;"
+    'case 3:\n\t\t\t\t\tif (hitmark_ignore_time > time)\n\t\t\t\t\t\treturn;\n\n\t\t\t\t\thitmark_type = var_1;\n\t\t\t\t\t\n\t\t\t\t\t// NZP-M9 Damage Numbers Trigger\n\t\t\t\t\tif (hitmark_type == 1) {\n\t\t\t\t\t\tdmg_text_str = "KILL";\n\t\t\t\t\t} else {\n\t\t\t\t\t\tdmg_text_str = "HIT";\n\t\t\t\t\t}\n\t\t\t\t\tdmg_text_time = time + 0.8;',
+    "Trigger Damage Numbers on Hit",
+    "dmg_text_str = \"KILL\";"
 )
 
-# 4. HUD Zeichnen (mit Pause-Check)
+# 3. HUD Zeichnen (Echte Kills aus dem Scoreboard, Time, Damage Numbers)
 patch(
     CLIENT_MAIN,
     "\tif (cvar(\"chase_active\")) {\n\t\tChase_Update();\n\t}\n\n\t//does what you think it does\n\trenderscene();",
@@ -365,8 +355,9 @@ patch(
 \t\t
 \t\tsui_set_align([SUI_ALIGN_END, SUI_ALIGN_START]);
 \t\t
-\t\t// Kill Counter oben rechts
-\t\tsui_text([-10, 10], MENU_TEXT_MEDIUM, sprintf("KILLS: %d", m9_custom_kills), [0.8, 0.2, 1], 1, 0);
+\t\t// Kill Counter oben rechts (Direkt vom Server-Scoreboard abgerufen)
+\t\tfloat real_kills = stof(getplayerkeyvalue(player_localnum, "frags"));
+\t\tsui_text([-10, 10], MENU_TEXT_MEDIUM, sprintf("KILLS: %d", real_kills), [0.8, 0.2, 1], 1, 0);
 \t\t
 \t\t// Survival Time
 \t\tfloat mins = floor(cltime / 60);
@@ -385,8 +376,8 @@ patch(
 \t\t}
 \t\tsui_end();
 \t}""",
-    "Zeichne HUD (nur wenn nicht pausiert)",
-    "--- NZP-M9 KILLS, TIME & DAMAGE NUMBERS ---"
+    "Zeichne HUD (Echte Kills vom Server)",
+    "float real_kills = stof(getplayerkeyvalue(player_localnum, \"frags\"));"
 )
 
 print("\n=== Alle Patches erfolgreich angewendet. ===")
