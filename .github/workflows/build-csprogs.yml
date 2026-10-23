@@ -1,4 +1,4 @@
-name: Buildinh Custom NZP (qwprogs, menu & csprogs)
+name: Buildinhe Custom NZP (qwprogs, menu & csprogs)
 
 on:
   push:
@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Engine-Repo auschecken (um den passenden Compiler zu bauen)
+      # 1. Engine-Repo auschecken
       - name: Checkout nzp-team/fteqw
         uses: actions/checkout@v4
         with:
@@ -27,15 +27,11 @@ jobs:
       # 3. Passenden Compiler (fteqcc) bauen
       - name: Build matching FTEQCC
         run: |
-          cd fteqw
-          # FTEQCC bauen (entweder im engine/ Ordner oder direkt im Root)
-          if [ -f "engine/Makefile" ]; then
-            cd engine
-          fi
-          make fteqcc -j$(nproc) || make -C engine fteqcc -j$(nproc)
+          cd fteqw/engine
+          make qcc-rel -j$(nproc)
           # Compiler ins QuakeC-Verzeichnis kopieren
-          cp fteqcc ../quakec-m9/bin/fteqcc-cli-lin 2>/dev/null || cp engine/fteqcc ../quakec-m9/bin/fteqcc-cli-lin
-          chmod +x ../quakec-m9/bin/fteqcc-cli-lin
+          cp release/fteqcc ../../quakec-m9/bin/fteqcc-cli-lin
+          chmod +x ../../quakec-m9/bin/fteqcc-cli-lin
 
       # 4. Python-Abhängigkeiten installieren
       - name: Install Python Dependencies
