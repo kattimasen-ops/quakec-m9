@@ -1,4 +1,4 @@
-name: kreiere Custom NZP (menu & csprogs)
+name: Build Custom NZP (menu & csprogs)
 
 on:
   push:
