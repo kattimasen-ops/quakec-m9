@@ -313,7 +313,7 @@ patch(
 )
 
 # ==========================================
-# TEIL 4: CUSTOM HUD & VISUALS (BATTERY, KILLS, VIGNETTE, DAMAGE NUMBERS)
+# TEIL 4: CUSTOM HUD & VISUALS (KILLS, VIGNETTE, DAMAGE NUMBERS)
 # ==========================================
 
 # 1. Vignette & Damage Number Variablen in main.qc (CSQC) hinzufügen
@@ -375,27 +375,13 @@ patch(
     "--- NZP-M9 VIGNETTE ---"
 )
 
-# 4. Batterie und Kills im HUD zeichnen (hud.qc)
+# 4. Kill-Counter im HUD zeichnen (hud.qc) - Batterie entfernt
 patch(
     CLIENT_HUD,
     "void() HUD_DrawElements =",
     """void() HUD_DrawElements =
 {
-\t// --- NZP-M9 Custom HUD (Battery & Kills) ---
-\t// Batterie oben rechts
-\tfloat bat_pct = getbattery(0);
-\tif (bat_pct >= 0) { // -1 bedeutet System unterstützt es nicht
-\t\tfloat bat_charge = getbattery(1);
-\t\tvector bat_col = [0, 1, 0]; // Grün
-\t\tif (bat_pct < 20) bat_col = [1, 0, 0]; // Rot
-\t\telse if (bat_pct < 50) bat_col = [1, 1, 0]; // Gelb
-\t\t
-\t\tif (bat_charge > 0) bat_col = [0, 0.5, 1]; // Blau beim Laden
-\t\t
-\t\tsui_set_align([SUI_ALIGN_END, SUI_ALIGN_START]);
-\t\tsui_text([-10, 10], MENU_TEXT_SMALL, sprintf("BAT %d%%", bat_pct), bat_col, 1, 0);
-\t}
-
+\t// --- NZP-M9 Custom HUD (Kills) ---
 \t// Kills unten rechts
 \tfloat my_kills = getstatf(STAT_KILLEDMONSTERS); // Wird vom Server genutzt
 \tsui_set_align([SUI_ALIGN_END, SUI_ALIGN_END]);
@@ -403,8 +389,8 @@ patch(
 
 \t// Original HUD rendern
 \tsui_push_frame([0, 0], sui_current_frame_size());""",
-    "Füge Batterie & Kills zum HUD hinzu",
-    "BAT %d%%"
+    "Füge Kill-Counter zum HUD hinzu",
+    "KILLS: %d"
 )
 
 print("\n=== Alle Patches erfolgreich angewendet. ===")
