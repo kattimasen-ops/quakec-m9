@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# NZP-M9 Patches: Server-Browser, Performance, HUD & Extreme Client-Side Gore
+# NZP-M9 Patches: Server-Browser, Performance, HUD, Gore & Advanced Features
 
 import sys
 import re
@@ -12,6 +12,8 @@ def patch(path: Path, anchor: str, replacement: str, description: str, marker: s
     if anchor in content:
         path.write_text(content.replace(anchor, replacement, 1), encoding="utf-8")
         print(f"[OK]   {description}")
+    else:
+        print(f"[WARN] {description}: Anker nicht gefunden.")
 
 def force_replace_regex(path: Path, pattern: str, replacement: str, description: str):
     if not path.exists(): sys.exit(1)
@@ -22,7 +24,6 @@ def force_replace_regex(path: Path, pattern: str, replacement: str, description:
         print(f"[OK]   {description}")
     else:
         print(f"[FATAL] {description}: Konnte nicht ersetzt werden!")
-        sys.exit(1)
 
 def ensure_line(path: Path, line: str, description: str) -> None:
     if not path.exists(): return
@@ -50,10 +51,10 @@ CLIENT_PARTICLES = CLIENT / "particles.qc"
 FTE_QC = CLIENT / "defs/fte.qc"
 MENU_DEFS = BASE / "defs/menu_defs.qc"
 MENU_CRED = BASE / "menu_cred.qc"
-PARTICLES_DIR = Path("particles")
+CUSTOM_QC = CLIENT / "defs/custom.qc"
 
 # ==========================================
-# TEIL 0: BASIS (Unverändert)
+# TEIL 0: BASIS & CUSTOM.QC
 # ==========================================
 if MENU_DEFS.exists():
     content = MENU_DEFS.read_text(encoding="utf-8")
@@ -70,11 +71,31 @@ ensure_line(MENU_DEFS, "float last_input_deviceid;", "Füge last_input_deviceid 
 ensure_line(MENU_DEFS, "void(float wantmode) m_toggle;", "Füge m_toggle Deklaration hinzu")
 append_safe(MENU_DEFS, "\n#ifndef MENU\nvoid() Menu_DrawMapPreview = { };\n#endif\n", "Füge menu_defs.qc Dummy hinzu", "void() Menu_DrawMapPreview = { };")
 
+# WICHTIG: Variablen in custom.qc deklarieren (falls sie fehlen)
+if CUSTOM_QC.exists():
+    custom_additions = """
+// --- NZP-M9 CUSTOM ADDITIONS ---
+float dmg_text_time;
+string dmg_text_str;
+float gore_enabled;
+float gore_kill_light;
+float dmg_indicator_alpha;
+float dmg_last_health;
+float screen_shake_intensity;
+float hitmarker_sound_time;
+float fov_punch_time;
+float kill_streak_count;
+float kill_streak_reset_time;
+float kill_streak_display_time;
+string kill_streak_text;
+"""
+    append_safe(CUSTOM_QC, custom_additions, "Füge Variablen zu custom.qc hinzu", "float kill_streak_count;")
+
 patch(CLIENT_MAIN, "float menu_active;", "// float menu_active;", "Entferne doppelte menu_active Definition", "// float menu_active;")
 MENU_CRED.write_text("void() Menu_Credits = { Menu_DrawBackground(); Menu_DrawTitle(\"CREDITS\"); Menu_DrawMapPanel(); sui_text([150, 100], MENU_TEXT_MEDIUM, \"Credits are currently disabled in this build.\", [1, 1, 1], 1, 0); Menu_Button(-1, \"cr_back\", \"BACK\", \"Return to Main Menu.\") ? current_menu = MENU_MAIN : 0; sui_pop_frame(); };", encoding="utf-8")
 
 # ==========================================
-# TEIL 1: SERVER-BROWSER GAMEPAD NAVIGATION (Unverändert)
+# TEIL 1: SERVER-BROWSER & A/B Tausch
 # ==========================================
 patch(MENU_COOP, "int num_cached_servers;", "int num_cached_servers;\nfloat coop_browse_selected;", "A1: Variable coop_browse_selected", "float coop_browse_selected;")
 patch(MENU_COOP, "void() Menu_Coop_Browse =\n{\n\tMenu_Coop_UpdateCache();", 
@@ -124,9 +145,6 @@ patch(SUI_SYS, "void() _sui_menukey_enter =\n{\n\tif (_hover_actions[0] == \"\")
       "void() _sui_menukey_enter =\n{\n\tif (_hover_actions[0] == \"\") _sui_menukey_downarrow();\n\tif (current_menu == MENU_COOPBROWSE && _hover_actions[0] == \"cbm_serverlist\") {\n\t\tif (Menu_Coop_Browse_EnterContainer()) _hover_actions[0] = \"cbm_serverlistscrl0\";\n\t}\n\t_click_actions[0] = _hover_actions[0]; _click_action_count = 1; _last_clicked_action_count = 1;\n};",
       "D: enter auf Container", "Menu_Coop_Browse_EnterContainer())")
 
-# ==========================================
-# TEIL 1.5: FIX A/B Tausch (Unverändert)
-# ==========================================
 patch(
     SUI_SYS,
     "float(float evtype, float scanx, float chary, float devid) sui_input_event =\n{\n\tswitch (evtype)",
@@ -143,7 +161,7 @@ patch(
 )
 
 # ==========================================
-# TEIL 2: VIDEO-MENÜ & CUSTOM OPTIONEN (Unverändert)
+# TEIL 2: VIDEO-MENÜ & OPTIONEN
 # ==========================================
 content = MENU_MAIN_MENU.read_text(encoding="utf-8")
 content = content.replace("50 + (order * 25)", "50 + (order * 20)")
@@ -158,7 +176,6 @@ force_replace_regex(
     'string menu_video_buttons[16] = {"vm_resol", "vm_fulls", "vm_shfps", "vm_maxps", "vm_vsync", "vm_fov", "vm_gamma", "vm_uwide", "vm_parts", "vm_decal", "vm_dynlgt", "vm_shdw", "vm_bob", "vm_filtr", "vm_apply", "vm_back"};',
     "E1: Button-Array überschreiben"
 )
-
 force_replace_regex(
     MENU_VIDE,
     r"float current_selected_vidmode;.*?float current_filter;",
@@ -175,7 +192,6 @@ float current_bob;
 float current_filter;''',
     "E2: Variablen überschreiben"
 )
-
 force_replace_regex(
     MENU_VIDE,
     r"void\(\) Menu_Video_StoreCurrentSettings =\s*\{.*?\}",
@@ -194,7 +210,6 @@ force_replace_regex(
 }''',
     "E3: StoreCurrentSettings überschreiben"
 )
-
 if "Menu_Video_UpdateDynLight" not in MENU_VIDE.read_text(encoding="utf-8"):
     patch(MENU_VIDE, "void() Menu_Video_UpdateUltrawide =", '''void() Menu_Video_UpdateDecals = { Menu_PlaySound(MENU_SND_ENTER); current_decals = !current_decals; cvar_set("nzp_decals", ftos(current_decals)); };
 void() Menu_Video_UpdateDynLight = { Menu_PlaySound(MENU_SND_ENTER); current_dynlight = !current_dynlight; cvar_set("r_dynamic", ftos(current_dynlight)); };
@@ -305,54 +320,107 @@ void() Menu_Video =
 
     sui_pop_frame();	
 };'''
-
-force_replace_regex(
-    MENU_VIDE,
-    r"void\(\) Menu_Video\s*=\s*\{.*?\n\};",
-    menu_video_function,
-    "E5: Menu_Video überschreiben (Layout fixen)"
-)
-
-patch(MAIN_QC, 'build_datetime = fgets(file);', 'build_datetime = "M9 Pro Custom Build";\n        // build_datetime = fgets(file);', "Custom Version String im Menü", "M9 Pro Custom Build")
+force_replace_regex(MENU_VIDE, r"void\(\) Menu_Video\s*=\s*\{.*?\n\};", menu_video_function, "E5: Menu_Video überschreiben")
+patch(MAIN_QC, 'build_datetime = fgets(file);', 'build_datetime = "M9 Pro Custom Build";\n        // build_datetime = fgets(file);', "Custom Version String", "M9 Pro Custom Build")
 
 # ==========================================
-# TEIL 3: ADVANCED PARTICLES (Unverändert)
+# TEIL 3: MAIN.QC - INITIALISIERUNG & LOGIK
 # ==========================================
-if (PARTICLES_DIR / "m9_spikeset.cfg").exists():
-    (PARTICLES_DIR / "m9_spikeset.cfg").unlink()
-    print("[OK]   Alte schwere m9_spikeset.cfg gelöscht (Speicher sparen)")
-
+# 1. Initialisiere unsere Variablen in CSQC_Init
 patch(
     CLIENT_MAIN,
     "void(float apiver, string enginename, float enginever) CSQC_Init =\n{",
-    'void(float apiver, string enginename, float enginever) CSQC_Init =\n{\n\tlocalcmd("r_particledesc highfps\\n");',
-    "Lade Custom Particles (highfps) in CSQC_Init",
-    'r_particledesc highfps'
+    """void(float apiver, string enginename, float enginever) CSQC_Init =
+{
+	// NZP-M9 Initialisierungen
+	gore_enabled = 1;
+	gore_kill_light = 300;
+	dmg_text_time = 0;
+	dmg_text_str = "";
+	dmg_indicator_alpha = 0;
+	dmg_last_health = 100;
+	screen_shake_intensity = 0;
+	hitmarker_sound_time = 0;
+	fov_punch_time = 0;
+	kill_streak_count = 0;
+	kill_streak_reset_time = 0;
+	kill_streak_display_time = 0;
+	kill_streak_text = "";
+""",
+    "Initialisiere Variablen in CSQC_Init",
+    "// NZP-M9 Initialisierungen"
 )
 
-# ==========================================
-# TEIL 4: CUSTOM HUD (KILL COUNTER - Unverändert)
-# ==========================================
-patch(
-    CLIENT_MAIN,
-    "noref void() CSQC_WorldLoaded =",
-    """// --- NZP-M9 Custom HUD Variablen ---
-float dmg_text_time;
-string dmg_text_str;
-
-noref void() CSQC_WorldLoaded =""",
-    "Deklariere HUD-Variablen",
-    "float dmg_text_time;"
-)
-
+# 2. Parse_Event für Gore, Hitmarker-Sound, FOV-Punch und Kill-Streaks
 patch(
     CLIENT_MAIN,
     'case 3:\n\t\t\t\t\tif (hitmark_ignore_time > time)\n\t\t\t\t\t\treturn;\n\n\t\t\t\t\thitmark_type = var_1;',
-    'case 3:\n\t\t\t\t\tif (hitmark_ignore_time > time)\n\t\t\t\t\t\treturn;\n\n\t\t\t\t\thitmark_type = var_1;\n\t\t\t\t\t\n\t\t\t\t\t// NZP-M9 Damage Numbers Trigger\n\t\t\t\t\tif (hitmark_type == 1) {\n\t\t\t\t\t\tdmg_text_str = "KILL";\n\t\t\t\t\t} else {\n\t\t\t\t\t\tdmg_text_str = "HIT";\n\t\t\t\t\t}\n\t\t\t\t\tdmg_text_time = time + 0.8;',
-    "Trigger Damage Numbers on Hit",
-    "dmg_text_str = \"KILL\";"
+    """case 3:
+					if (hitmark_ignore_time > time)
+						return;
+
+					hitmark_type = var_1;
+					
+					// NZP-M9 Hitmarker-Sound (mit Cooldown)
+					if (time > hitmarker_sound_time) {
+						if (hitmark_type == 1) localsound_enhanced("sounds/zombie/headshot.wav", 0, 0.7);
+						else localsound_enhanced("sounds/weapons/knife/knife_hit.wav", 0, 0.5);
+						hitmarker_sound_time = time + 0.05;
+					}
+					
+					// NZP-M9 FOV-Punch bei Schuss
+					fov_punch_time = time + 0.08;
+
+					// NZP-M9 Kill-Streak
+					if (hitmark_type == 1) {
+						if (time > kill_streak_reset_time) kill_streak_count = 1;
+						else kill_streak_count += 1;
+						kill_streak_reset_time = time + 2.0;
+						
+						if (kill_streak_count == 2) { kill_streak_text = "DOUBLE KILL"; kill_streak_display_time = time + 2.0; }
+						else if (kill_streak_count == 3) { kill_streak_text = "TRIPLE KILL"; kill_streak_display_time = time + 2.0; }
+						else if (kill_streak_count >= 4) { kill_streak_text = "MULTI KILL!"; kill_streak_display_time = time + 2.0; }
+					}
+					
+					// NZP-M9 Damage Numbers Trigger
+					if (hitmark_type == 1) dmg_text_str = "KILL";
+					else dmg_text_str = "HIT";
+					dmg_text_time = time + 0.8;""",
+    "CSQC_Parse_Event: Trigger Gore, Sound, Streak, FOV",
+    "kill_streak_text = \"DOUBLE KILL\";"
 )
 
+# 3. Screen-Shake und FOV-Punch in CSQC_UpdateView (Kamera-Berechnung)
+patch(
+    CLIENT_MAIN,
+    "\tCamera_AimSnap(camang);\n\n\tcamang[0] += cam_snap_difference[0];\n\tcamang[1] += cam_snap_difference[1];\n\tcamang[2] += cam_snap_difference[2];\n\n\tsetviewprop(VF_ANGLES, camang);",
+    """\tCamera_AimSnap(camang);
+
+	camang[0] += cam_snap_difference[0];
+	camang[1] += cam_snap_difference[1];
+	camang[2] += cam_snap_difference[2];
+	
+	// NZP-M9: Screen-Shake
+	if (screen_shake_intensity > 0) {
+		camang[0] += (random() * 2 - 1) * screen_shake_intensity * 0.3;
+		camang[1] += (random() * 2 - 1) * screen_shake_intensity * 0.3;
+		camang[2] += (random() * 2 - 1) * screen_shake_intensity * 0.1;
+	}
+
+	setviewprop(VF_ANGLES, camang);
+
+	// NZP-M9: FOV-Punch
+	float base_fov = autocvar(fov, 90) * getstatf(STAT_VIEWZOOM);
+	if (time < fov_punch_time) {
+		float punch_factor = (fov_punch_time - time) / 0.08;
+		base_fov = base_fov - (punch_factor * 8);
+	}
+	setviewprop(VF_AFOV, base_fov);""",
+    "CSQC_UpdateView: Screen-Shake & FOV-Punch",
+    "// NZP-M9: Screen-Shake"
+)
+
+# 4. HUD-Rendering (Damage-Indicator, Kills, Streak, Damage-Numbers)
 patch(
     CLIENT_MAIN,
     "\tif (cvar(\"chase_active\")) {\n\t\tChase_Update();\n\t}\n\n\t//does what you think it does\n\trenderscene();",
@@ -363,111 +431,129 @@ patch(
 \t//does what you think it does
 \trenderscene();
 
-\t// --- NZP-M9 KILLS, TIME & DAMAGE NUMBERS ---
-\tif (serverkey("pausestate") != "1") {
-\t\tsui_begin(g_width, g_height);
-\t\t
-\t\tsui_set_align([SUI_ALIGN_END, SUI_ALIGN_START]);
-\t\t
-\t\t// FIX: Player-Entity im CSQC suchen und .kills lesen
-\t\tfloat real_kills = 0;
-\t\tentity player_ent = find(world, classname, "player");
-\t\twhile (player_ent != world) {
-\t\t\tif (player_ent.playernum == player_localnum + 1) {
-\t\t\t\treal_kills = player_ent.kills;
-\t\t\t\tbreak;
-\t\t\t}
-\t\t\tplayer_ent = find(player_ent, classname, "player");
-\t\t}
-\t\t
-\t\tsui_text([-10, 10], MENU_TEXT_MEDIUM, sprintf("KILLS: %d", real_kills), [0.8, 0.2, 1], 1, 0);
-\t\t
-\t\tfloat mins = floor(cltime / 60);
-\t\tfloat secs = floor(cltime % 60);
-\t\tsui_text([-10, 30], MENU_TEXT_SMALL, sprintf("TIME: %02d:%02d", mins, secs), [1, 1, 1], 1, 0);
+\t// --- NZP-M9 CUSTOM HUD ---
+	
+	// Damage-Indicator (Roter Rand bei HP-Verlust)
+	float current_health = getstatf(STAT_HEALTH);
+	if (current_health < dmg_last_health) {
+		dmg_indicator_alpha = 0.6;
+		screen_shake_intensity += 3;
+	}
+	dmg_last_health = current_health;
+	dmg_indicator_alpha -= frametime * 2;
+	if (dmg_indicator_alpha < 0) dmg_indicator_alpha = 0;
+	
+	if (dmg_indicator_alpha > 0) {
+		float edge_size = 20;
+		drawfill([0, 0], [g_width, edge_size], [1, 0, 0], dmg_indicator_alpha, 0);
+		drawfill([0, g_height - edge_size], [g_width, edge_size], [1, 0, 0], dmg_indicator_alpha, 0);
+		drawfill([0, edge_size], [edge_size, g_height - edge_size*2], [1, 0, 0], dmg_indicator_alpha, 0);
+		drawfill([g_width - edge_size, edge_size], [edge_size, g_height - edge_size*2], [1, 0, 0], dmg_indicator_alpha, 0);
+	}
+	
+	// Screen-Shake abbauen
+	screen_shake_intensity -= frametime * 25;
+	if (screen_shake_intensity < 0) screen_shake_intensity = 0;
+	
+	if (serverkey("pausestate") != "1") {
+		sui_begin(g_width, g_height);
+		
+		sui_set_align([SUI_ALIGN_END, SUI_ALIGN_START]);
+		
+		float real_kills = 0;
+		entity player_ent = find(world, classname, "player");
+		while (player_ent != world) {
+			if (player_ent.playernum == player_localnum + 1) {
+				real_kills = player_ent.kills;
+				break;
+			}
+			player_ent = find(player_ent, classname, "player");
+		}
+		
+		sui_text([-10, 10], MENU_TEXT_MEDIUM, sprintf("KILLS: %d", real_kills), [0.8, 0.2, 1], 1, 0);
+		
+		float mins = floor(cltime / 60);
+		float secs = floor(cltime % 60);
+		sui_text([-10, 30], MENU_TEXT_SMALL, sprintf("TIME: %02d:%02d", mins, secs), [1, 1, 1], 1, 0);
 
-\t\tif (time < dmg_text_time) {
-\t\t\tfloat diff = dmg_text_time - time;
-\t\t\tfloat offset_y = 60 - ((0.8 - diff) * 40);
-\t\t\tvector dmg_color = [1, 0.2, 1];
-\t\t\tif (dmg_text_str == "KILL") dmg_color = [1, 0, 0];
+		if (time < dmg_text_time) {
+			float diff = dmg_text_time - time;
+			float offset_y = 60 - ((0.8 - diff) * 40);
+			vector dmg_color = [1, 0.2, 1];
+			if (dmg_text_str == "KILL") dmg_color = [1, 0, 0];
 
-\t\t\tsui_set_align([SUI_ALIGN_CENTER, SUI_ALIGN_CENTER]);
-\t\t\tsui_text([0, -offset_y], MENU_TEXT_MEDIUM, dmg_text_str, dmg_color, diff, 0);
-\t\t}
-\t\tsui_end();
-\t}""",
-    "Zeichne HUD (FIX: Kills aus Player-Entity)",
-    "entity player_ent = find(world, classname, \"player\");"
+			sui_set_align([SUI_ALIGN_CENTER, SUI_ALIGN_CENTER]);
+			sui_text([0, -offset_y], MENU_TEXT_MEDIUM, dmg_text_str, dmg_color, diff, 0);
+		}
+		
+		if (time < kill_streak_display_time) {
+			sui_set_align([SUI_ALIGN_CENTER, SUI_ALIGN_CENTER]);
+			sui_text([0, -120], MENU_TEXT_LARGE, kill_streak_text, [1, 0.5, 0], 1, 0);
+		}
+		
+		sui_end();
+	}""",
+    "CSQC_UpdateView: Custom HUD rendern",
+    "--- NZP-M9 CUSTOM HUD ---"
 )
 
 # ==========================================
-# TEIL 5: EXTREME CLIENT-SIDE GORE MOD V2
+# TEIL 4: PARTICLES.QC - GORE & SHAKE TRIGGER
 # ==========================================
-
-# 1. verbessere Particles_RunParticle für massives Blut
+# 1. Partikel triggern Screen-Shake und Gore
 patch(
     CLIENT_PARTICLES,
     "void(float particle_type, vector position, float optional_field, float optional_entity) Particles_RunParticle =\n{",
     """void(float particle_type, vector position, float optional_field, float optional_entity) Particles_RunParticle =
 {
-    // NZP-M9 EXTREME GORE: Dreifaches Blut + dynamisches Licht bei jedem Treffer
-    if (particle_type == CSQC_PART_BLOODIMPACT) {
-        pointparticles(particleeffectnum("blood.blood_particle"), position, '0 0 0', 1);
-        pointparticles(particleeffectnum("blood.blood_particle"), position + randomvec() * 12, '0 0 0', 1);
-        pointparticles(particleeffectnum("blood.blood_particle"), position + randomvec() * 12, '0 0 0', 1);
-        
-        // Kurzer roter Lichtblitz
+    // NZP-M9: Roter Lichtblitz bei Blut
+    if (particle_type == CSQC_PART_BLOODIMPACT && gore_enabled) {
         dynamiclight_add(position, 150, '1 0 0');
-        return;
     }
-    """,
-    "EXTREME GORE: 3x Blut + Licht bei Einschlag",
-    "// NZP-M9 EXTREME GORE: Dreifaches Blut"
+    
+    // NZP-M9: Screen-Shake bei Explosionen
+    if (particle_type == CSQC_PART_EXPLOSION) {
+        screen_shake_intensity += 6;
+    }
+""",
+    "Particles_RunParticle: Gore & Screen-Shake",
+    "// NZP-M9: Roter Lichtblitz bei Blut"
 )
 
-# 2. Hitmarker Kill-Explosion (mit Traceline)
+# 2. Kill-Gibs explodieren lassen
 gore_function = """
 
-// --- NZP-M9 CLIENT-SIDE GORE V2 ---
+// --- NZP-M9 CLIENT-SIDE GORE KILL EXPLOSION ---
 void() CSQC_SpawnClientGore =
 {
-    // Hole Blickrichtung
     vector view_org = getviewprop(VF_ORIGIN);
     vector view_ang = getviewprop(VF_ANGLES);
     makevectors(view_ang);
     
-    // Mache einen unsichtbaren Laser geradeaus (um den Zombie zu treffen)
     traceline(view_org, view_org + v_forward * 2048, MOVE_HITMODEL, world);
     
     if (trace_fraction < 1) {
         vector hit_pos = trace_endpos;
         
-        // Wenn es ein KILL war (roter Hitmarker)
-        if (hitmark_type == 1) {
-            // Explodiere in Fleischstücke
+        if (hitmark_type == 1 && gore_enabled) {
             pointparticles(particleeffectnum("blood.gibs"), hit_pos, '0 0 0', 1);
             pointparticles(particleeffectnum("blood.gibs"), hit_pos + '0 0 15', '0 0 0', 1);
-            pointparticles(particleeffectnum("blood.blood_particle"), hit_pos + randomvec()*20, '0 0 0', 1);
-            
-            // Riesiger roter Lichtblitz für den Kill
-            dynamiclight_add(hit_pos, 300, '1 0 0');
+            dynamiclight_add(hit_pos, gore_kill_light, '1 0 0');
         }
     }
 };
 """
-append_safe(CLIENT_PARTICLES, gore_function, "Füge V2 Client-Gore-Funktion zu particles.qc hinzu", "CSQC_SpawnClientGore")
+append_safe(CLIENT_PARTICLES, gore_function, "Füge V2 Client-Gore-Funktion hinzu", "CSQC_SpawnClientGore")
 
 # 3. Trigger in CSQC_Parse_Event einbauen
 patch(
     CLIENT_MAIN,
-    'hitmark_type = var_1;\n\t\t\t\t\t\n\t\t\t\t\t// NZP-M9 Damage Numbers Trigger',
-    'hitmark_type = var_1;\n\t\t\t\t\t\n\t\t\t\t\t// NZP-M9 Client-Side Gore Trigger!\n\t\t\t\t\tCSQC_SpawnClientGore();\n\t\t\t\t\t\n\t\t\t\t\t// NZP-M9 Damage Numbers Trigger',
+    'hitmark_type = var_1;\n\t\t\t\t\t\n\t\t\t\t\t// NZP-M9 Hitmarker-Sound',
+    'hitmark_type = var_1;\n\t\t\t\t\t\n\t\t\t\t\t// NZP-M9 Client-Side Gore Trigger!\n\t\t\t\t\tCSQC_SpawnClientGore();\n\t\t\t\t\t\n\t\t\t\t\t// NZP-M9 Hitmarker-Sound',
     "Trigger Client-Gore on Hitmarker",
     "CSQC_SpawnClientGore();"
 )
 
-# 4. Forward-Deklaration in main.qc
 patch(
     CLIENT_MAIN,
     "noref void() CSQC_WorldLoaded =",
