@@ -1,4 +1,4 @@
-name: klopp Custom NZP (csprogs.dat & menu.dat)
+name: create Custom NZP (progs.dat, menu.dat & csprogs.dat)
 
 on:
   push:
@@ -10,28 +10,27 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Repository auschecken
       - name: Checkout your fork
         uses: actions/checkout@v4
 
-      # 2. Python-Abhängigkeiten installieren (WICHTIG: Verhindert den pandas Fehler)
       - name: Install Python Dependencies
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install pandas fastcrc colorama
 
-      # 3. Patches anwenden (Menü, Serverbrowser, Partikel)
       - name: Apply Patches
         run: |
           python3 scripts/apply_nzp_m9_patches.py
 
-      # 4. QuakeC kompilieren (Extrem schnell, da kein Docker)
       - name: Compile QuakeC
         run: |
           chmod +x bin/fteqcc-cli-lin
           
           echo "=== Generiere Hash-Tabelle ==="
           python3 bin/qc_hash_generator.py -i tools/asset_conversion_table.csv -o source/server/hash_table.qc
+          
+          echo "=== Kompiliere progs.dat (Server / SSQC) ==="
+          bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/ssqc.src -o progs.dat
           
           echo "=== Kompiliere menu.dat ==="
           bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/menu.src -o menu.dat
@@ -40,14 +39,14 @@ jobs:
           bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/csqc.src -o csprogs.dat
           
           echo "=== Ergebnis ==="
-          ls -la menu.dat csprogs.dat
+          ls -la progs.dat menu.dat csprogs.dat
 
-      # 5. Beide Dateien hochladen
       - name: Upload Dat Files
         uses: actions/upload-artifact@v4
         with:
           name: nzp-patched-files
           path: |
+            progs.dat
             menu.dat
             csprogs.dat
           if-no-files-found: error
