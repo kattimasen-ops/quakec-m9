@@ -52,12 +52,11 @@ MENU_DEFS = BASE / "defs/menu_defs.qc"
 MENU_CRED = BASE / "menu_cred.qc"
 PARTICLES_DIR = Path("particles")
 
-# Server-Dateien für Gore
 DAMAGE_QC = SERVER / "damage.qc"
 CLIENTFUNCS_QC = SERVER / "clientfuncs.qc"
 
 # ==========================================
-# TEIL 0: AUFRÄUMEN & BASIS
+# TEIL 0: BASIS
 # ==========================================
 if MENU_DEFS.exists():
     content = MENU_DEFS.read_text(encoding="utf-8")
@@ -127,6 +126,24 @@ patch(SUI_SYS, "void() _sui_menukey_uparrow =\n{\n\tstring current_hovered_optio
 patch(SUI_SYS, "void() _sui_menukey_enter =\n{\n\tif (_hover_actions[0] == \"\")\n\t\t_sui_menukey_downarrow();\n\n\t_click_actions[0] =  _hover_actions[0];\n\t_click_action_count = 1;\n\t_last_clicked_action_count = 1;\n};",
       "void() _sui_menukey_enter =\n{\n\tif (_hover_actions[0] == \"\") _sui_menukey_downarrow();\n\tif (current_menu == MENU_COOPBROWSE && _hover_actions[0] == \"cbm_serverlist\") {\n\t\tif (Menu_Coop_Browse_EnterContainer()) _hover_actions[0] = \"cbm_serverlistscrl0\";\n\t}\n\t_click_actions[0] = _hover_actions[0]; _click_action_count = 1; _last_clicked_action_count = 1;\n};",
       "D: enter auf Container", "Menu_Coop_Browse_EnterContainer())")
+
+# ==========================================
+# TEIL 1.5: FIX A/B Tausch (in sui_sys.qc, gilt für CSQC und MENU)
+# ==========================================
+patch(
+    SUI_SYS,
+    "float(float evtype, float scanx, float chary, float devid) sui_input_event =\n{\n\tswitch (evtype)",
+    """float(float evtype, float scanx, float chary, float devid) sui_input_event =
+{
+\t// NZP-M9: A = Zurueck (Escape), B = Bestaetigen (Enter)
+\tif (evtype == IE_KEYDOWN || evtype == IE_KEYUP) {
+\t\tif (scanx == K_GP_A) scanx = K_ESCAPE;
+\t\telse if (scanx == K_GP_B) scanx = K_ENTER;
+\t}
+\tswitch (evtype)""",
+    "FIX: A/B Button Swap in sui_sys.qc",
+    "// NZP-M9: A = Zurueck (Escape), B = Bestaetigen (Enter)"
+)
 
 # ==========================================
 # TEIL 2: VIDEO-MENÜ & CUSTOM OPTIONEN
@@ -317,7 +334,7 @@ patch(
 )
 
 # ==========================================
-# TEIL 4: CUSTOM HUD & VISUALS (KILLS, TIME, DAMAGE NUMBERS)
+# TEIL 4: CUSTOM HUD & VISUALS (FIX KILL COUNTER)
 # ==========================================
 patch(
     CLIENT_MAIN,
@@ -355,7 +372,17 @@ patch(
 \t\t
 \t\tsui_set_align([SUI_ALIGN_END, SUI_ALIGN_START]);
 \t\t
-\t\tfloat real_kills = stof(getplayerkeyvalue(player_localnum, "frags"));
+\t\t// FIX: Player-Entity im CSQC suchen und .kills lesen
+\t\tfloat real_kills = 0;
+\t\tentity player_ent = find(world, classname, "player");
+\t\twhile (player_ent != world) {
+\t\t\tif (player_ent.playernum == player_localnum + 1) {
+\t\t\t\treal_kills = player_ent.kills;
+\t\t\t\tbreak;
+\t\t\t}
+\t\t\tplayer_ent = find(player_ent, classname, "player");
+\t\t}
+\t\t
 \t\tsui_text([-10, 10], MENU_TEXT_MEDIUM, sprintf("KILLS: %d", real_kills), [0.8, 0.2, 1], 1, 0);
 \t\t
 \t\tfloat mins = floor(cltime / 60);
@@ -373,8 +400,8 @@ patch(
 \t\t}
 \t\tsui_end();
 \t}""",
-    "Zeichne HUD (Kills direkt aus Entität)",
-    "float real_kills = stof(getplayerkeyvalue(player_localnum, \"frags\"));"
+    "Zeichne HUD (FIX: Kills aus Player-Entity)",
+    "entity player_ent = find(world, classname, \"player\");"
 )
 
 # ==========================================
@@ -385,19 +412,14 @@ patch(
     "if (current_menu != MENU_NONE)\n\t{\n\t\treturn sui_input_event(evtype, scanx, chary, devid);\n\t}",
     """if (current_menu != MENU_NONE)
 \t{
-\t\t// NZP-M9 Gamepad Swap: A wird zu Escape (Zurück), B wird zu Enter (Bestätigen)
-\t\tif (evtype == IE_KEYDOWN || evtype == IE_KEYUP) {
-\t\t\tif (scanx == K_GP_A) scanx = K_ESCAPE;
-\t\t\telse if (scanx == K_GP_B) scanx = K_ENTER;
-\t\t}
 \t\treturn sui_input_event(evtype, scanx, chary, devid);
 \t}""",
-    "Swap A/B buttons in menus",
-    "if (scanx == K_GP_A) scanx = K_ESCAPE;"
+    "Gamepad Swap (Wird jetzt in sui_sys.qc gemacht)",
+    "Gamepad Swap (Wird jetzt in sui_sys.qc gemacht)"
 )
 
 # ==========================================
-# TEIL 6: EXTREME GORE MOD (Dismemberment & Blood)
+# TEIL 6: EXTREME GORE MOD (Server-Code - braucht progs.dat)
 # ==========================================
 
 # 1. Mehr Blut bei Treffern
