@@ -1,28 +1,5 @@
 /*
 	client/particles.qc
-
-	CSQC-Driven Particle Runner.
-
-	Copyright (C) 2021-2024 NZ:P Team
-
-	This program is free software; you can redistribute it and/or
-	modify it under the terms of the GNU General Public License
-	as published by the Free Software Foundation; either version 2
-	of the License, or (at your option) any later version.
-
-	This program is distributed in the hope that it will be useful,
-	but WITHOUT ANY WARRANTY; without even the implied warranty of
-	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-
-	See the GNU General Public License for more details.
-
-	You should have received a copy of the GNU General Public License
-	along with this program; if not, write to:
-
-		Free Software Foundation, Inc.
-		59 Temple Place - Suite 330
-		Boston, MA  02111-1307, USA
-
 */
 
 // Stored outside of struct for stack efficency.
@@ -32,34 +9,26 @@ vector  particle_position;
 
 //
 // Particles_MuzzleflashCallback()
-// Executes Muzzleflash Particle effect.
-// Optional: Which weapon was fired (left/right, for akimbo).
 //
 void() Particles_MuzzleflashCallback =
 {
-    // Do not display Muzzleflashes if we're using a Sniper Scope or not drawing the viewmodel.
     if (getstatf(STAT_WEAPONZOOM) == 2 || !cvar("r_drawviewmodel") || cvar("chase_active"))
         return;
 
-    // Organized storage of optional_field and optional_entity.
     float weapon_side = particle_optional_field;
     float hit_entity = particle_optional_entity;
 
-    // Obtain our input view angles.
     getinputstate(servercommandframe);
     makevectors(input_angles);
 
     vector muzzleflash_offset;
 	vector muzzleflash_position = getviewprop(VF_ORIGIN);
 
-	// If firing the left side of a dual-wield weapon, use the left side muzzleflash offset.
     if (weapon_side == 0 && IsDualWeapon(getstatf(STAT_ACTIVEWEAPON)))
 		muzzleflash_offset = WepDef_GetLeftFlashOffset(getstatf(STAT_ACTIVEWEAPON))/1000;
-	// Otherwise, use the standard offset.
 	else
 		muzzleflash_offset = GetWeaponFlash_Offset(getstatf(STAT_ACTIVEWEAPON))/1000;
 
-	// Move to match ADS position if Zoomed in.
 	if(getstatf(STAT_WEAPONZOOM) == 1) {  
 		muzzleflash_offset += GetWeaponADSOfs(getstatf(STAT_ACTIVEWEAPON))/1000;
 	}
@@ -68,13 +37,10 @@ void() Particles_MuzzleflashCallback =
 	muzzleflash_position += v_right * muzzleflash_offset_x;
 	muzzleflash_position += v_up * muzzleflash_offset_y;
 
-	float muzzleflash_type = rint(random() * 2); // Choose one of three Muzzleflash variances.
+	float muzzleflash_type = rint(random() * 2);
 
-	// Display Muzzleflash Particle and Dynamic Light
 	if (IsPapWeapon(getstatf(STAT_ACTIVEWEAPON))) {			
 		pointparticles(particleeffectnum(strcat("muzzle.muzzle_pap_part", ftos(muzzleflash_type))), muzzleflash_position, '0 0 0', 1);
-
-		// Pack-A-Punched Weapons can display either a Blue or Red light
 		if (random() > 0.5)
 			dynamiclight_add(muzzleflash_position, 256, '0.7 0 0');
 		else
@@ -84,7 +50,6 @@ void() Particles_MuzzleflashCallback =
 		dynamiclight_add(muzzleflash_position, 256, '1.2 0.7 0.2');
 	}
 
-    // Grenade-Lunching weapons should not show decals.
     if (GetFiretype(getstatf(STAT_ACTIVEWEAPON)) == FIRETYPE_GRENADE)
 		return;
 			
@@ -92,36 +57,39 @@ void() Particles_MuzzleflashCallback =
 		pointparticles(particleeffectnum("weapons.impact"), particle_position, '0 0 0', 1);
 		pointparticles(particleeffectnum("weapons.impact_decal"), particle_position, '0 0 0', 1);
 	}
-
 };
 
-// This struct must be ordered linearly for fast array lookups. Do NOT skip indexes.
 var struct
 {
-    float   particle_type;      // ID of Particle.
-    string  particle_string;    // String that refers to the Particle name/gamedir path. May be blank if callbacks utilized.
-    void()  particle_func;      // Callback that also gets executed on Particle_RunParticle, typically __NULL__. optional_field used here.
+    float   particle_type;
+    string  particle_string;
+    void()  particle_func;
 } csqc_particles[] =
 {
-    {CSQC_PART_MUZZLEFLASH, "", Particles_MuzzleflashCallback},     // View Entity Muzzleflashes.
-    {CSQC_PART_EXPLOSION, "weapons.explode", __NULL__},             // Explosion effect.
-    {CSQC_PART_BLOODIMPACT, "blood.blood_particle", __NULL__},      // Blood Impact effect.
-    {CSQC_PART_ZOMBIEGIB, "blood.gibs", __NULL__},                  // Zombie Gib effect.
-    {CSQC_PART_FIRE, "flames.flame_particle", __NULL__}             // Fire/flame effect.
+    {CSQC_PART_MUZZLEFLASH, "", Particles_MuzzleflashCallback},
+    {CSQC_PART_EXPLOSION, "weapons.explode", __NULL__},
+    {CSQC_PART_BLOODIMPACT, "blood.blood_particle", __NULL__},
+    {CSQC_PART_ZOMBIEGIB, "blood.gibs", __NULL__},
+    {CSQC_PART_FIRE, "flames.flame_particle", __NULL__}
 };
 
 //
-// Particles_RunParticle(particle_type, position, optional_field, optional_entity)
-// Runs specific particle given it's type, location,
-// and optional fields to pass to an optional callback.
+// Particles_RunParticle()
 //
 void(float particle_type, vector position, float optional_field, float optional_entity) Particles_RunParticle =
 {
-    // If the requested particle index does not have a callback function,
-    // run it outright.
+    // NZP-M9: Roter Lichtblitz bei Blut-Einschlag
+    if (particle_type == CSQC_PART_BLOODIMPACT && gore_enabled) {
+        dynamiclight_add(position, 150, '1 0 0');
+    }
+    
+    // NZP-M9: Screen-Shake bei Explosionen
+    if (particle_type == CSQC_PART_EXPLOSION) {
+        screen_shake_intensity += 6;
+    }
+
     if (csqc_particles[particle_type].particle_func == __NULL__)
         pointparticles(particleeffectnum(csqc_particles[particle_type].particle_string), position, '0 0 0', 1);
-    // It has a callback -- so execute it instead.
     else {
         particle_optional_field = optional_field;
         particle_optional_entity = optional_entity;
@@ -134,27 +102,72 @@ void(float particle_type, vector position, float optional_field, float optional_
 
 //
 // Particles_Init()
-// Particles never draw on their first run, so "allocate"
-// them here. Particles only called via callbacks need
-// invidiually referenced.
 //
 void() Particles_Init =
 {
     int i;
-    //
-    // Callback Particles
-    //
-
-    // Muzzleflashes.
 	for(i = 0; i < 3; i++) {
 		pointparticles(particleeffectnum(strcat("muzzle.muzzle_pap_part", itos(i))), '0 0 0', '0 0 0', 0);
 		pointparticles(particleeffectnum(strcat("muzzle.muzzle_part", itos(i))), '0 0 0', '0 0 0', 0);
 	}	
-
-    //
-    // Normal References
-    //	
     for(i = 0; i < csqc_particles.length; i++) {
         pointparticles(particleeffectnum(csqc_particles[i].particle_string), '0 0 0', '0 0 0', 0);
     }			
+};
+
+//
+// NZP-M9 CLIENT-SIDE GORE + SOUND + KILL STREAK
+//
+void() CSQC_SpawnClientGore =
+{
+    vector view_org = getviewprop(VF_ORIGIN);
+    vector view_ang = getviewprop(VF_ANGLES);
+    makevectors(view_ang);
+    
+    traceline(view_org, view_org + v_forward * 2048, MOVE_HITMODEL, world);
+    
+    if (trace_fraction < 1) {
+        vector hit_pos = trace_endpos;
+        
+        // Hitmarker-Sound (mit Cooldown gegen Spam bei Maschinenpistolen)
+        if (time > hitmarker_sound_time) {
+            if (hitmark_type == 1) {
+                localsound_enhanced("sounds/zombie/headshot.wav", 0, 0.7);
+            } else {
+                localsound_enhanced("sounds/weapons/knife/knife_hit.wav", 0, 0.5);
+            }
+            hitmarker_sound_time = time + 0.05;
+        }
+        
+        // FOV-Punch bei jedem Schuss
+        fov_punch_time = time + 0.08;
+        
+        if (hitmark_type == 1) {
+            // Kill-Streak-Logik
+            if (time > kill_streak_reset_time) {
+                kill_streak_count = 1;
+            } else {
+                kill_streak_count += 1;
+            }
+            kill_streak_reset_time = time + 2.0;
+            
+            if (kill_streak_count == 2) {
+                kill_streak_text = "DOUBLE KILL";
+                kill_streak_display_time = time + 2.0;
+            } else if (kill_streak_count == 3) {
+                kill_streak_text = "TRIPLE KILL";
+                kill_streak_display_time = time + 2.0;
+            } else if (kill_streak_count >= 4) {
+                kill_streak_text = "MULTI KILL!";
+                kill_streak_display_time = time + 2.0;
+            }
+            
+            // Gore-Effekt
+            if (gore_enabled) {
+                pointparticles(particleeffectnum("blood.gibs"), hit_pos, '0 0 0', 1);
+                pointparticles(particleeffectnum("blood.gibs"), hit_pos + '0 0 15', '0 0 0', 1);
+                dynamiclight_add(hit_pos, gore_kill_light, '1 0 0');
+            }
+        }
+    }
 };
