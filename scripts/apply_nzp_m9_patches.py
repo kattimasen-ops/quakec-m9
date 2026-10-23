@@ -16,10 +16,11 @@ def patch(path: Path, anchor: str, replacement: str, description: str, marker: s
 def force_replace_regex(path: Path, pattern: str, replacement: str, description: str):
     if not path.exists(): sys.exit(1)
     content = path.read_text(encoding="utf-8")
+    # Auch wenn es schon gepatcht wurde, erzwingen wir das neue Layout
     new_content, count = re.subn(pattern, replacement, content, count=1, flags=re.DOTALL)
     if count >= 1:
         path.write_text(new_content, encoding="utf-8")
-        print(f"[OK]   {description} (Force-Replaced)")
+        print(f"[OK]   {description}")
     else:
         print(f"[FATAL] {description}: Konnte nicht ersetzt werden!")
         sys.exit(1)
@@ -123,10 +124,9 @@ patch(SUI_SYS, "void() _sui_menukey_enter =\n{\n\tif (_hover_actions[0] == \"\")
       "D: enter auf Container", "Menu_Coop_Browse_EnterContainer())")
 
 # ==========================================
-# TEIL 2: VIDEO-MENÜ KOMPLETT ÜBERSCHREIBEN (BULLETPROOF)
+# TEIL 2: VIDEO-MENÜ KOMPLETT ÜBERSCHREIBEN (BULLETPROOF & FIXED LAYOUT)
 # ==========================================
 
-# 1. Button-Array (16 Buttons)
 force_replace_regex(
     MENU_VIDE,
     r"string menu_video_buttons\[\d+\] = \{.*?\};",
@@ -134,7 +134,6 @@ force_replace_regex(
     "E1: Button-Array überschreiben"
 )
 
-# 2. Variablen komplett überschreiben
 force_replace_regex(
     MENU_VIDE,
     r"float current_selected_vidmode;.*?float current_filter;",
@@ -152,7 +151,6 @@ float current_filter;''',
     "E2: Variablen überschreiben"
 )
 
-# 3. StoreCurrentSettings komplett überschreiben
 force_replace_regex(
     MENU_VIDE,
     r"void\(\) Menu_Video_StoreCurrentSettings =\s*\{.*?\}",
@@ -172,7 +170,6 @@ force_replace_regex(
     "E3: StoreCurrentSettings überschreiben"
 )
 
-# 4. Update-Funktionen anhängen
 if "Menu_Video_UpdateDynLight" not in MENU_VIDE.read_text(encoding="utf-8"):
     patch(MENU_VIDE, "void() Menu_Video_UpdateUltrawide =", '''void() Menu_Video_UpdateDecals = { Menu_PlaySound(MENU_SND_ENTER); current_decals = !current_decals; cvar_set("nzp_decals", ftos(current_decals)); };
 void() Menu_Video_UpdateDynLight = { Menu_PlaySound(MENU_SND_ENTER); current_dynlight = !current_dynlight; cvar_set("r_dynamic", ftos(current_dynlight)); };
@@ -181,7 +178,7 @@ void() Menu_Video_UpdateBob = { Menu_PlaySound(MENU_SND_ENTER); current_bob = !c
 
 void() Menu_Video_UpdateUltrawide =''', "E4: Update-Funktionen hinzufügen", "Menu_Video_UpdateDynLight")
 
-# 5. DIE KOMPLETTE Menu_Video FUNKTION ÜBERSCHREIBEN
+# HIER IST DER FIX: Buttons 15 und 16 statt -2 und -1
 menu_video_function = '''
 void() Menu_Video =
 {
@@ -292,8 +289,10 @@ void() Menu_Video =
     Menu_DrawOptionValue(14, filt_string);
 
     Menu_DrawDivider(14.25);
-    Menu_Button(-2, "vm_apply", "APPLY", "Save & Apply Settings.") ? Menu_Video_ApplySettings() : 0;
-    Menu_Button(-1, "vm_back", "BACK", "Return to Configuration Menu.") ? current_menu = MENU_OPTIONS : 0;
+    
+    // Buttons als normale Zeilen (15 und 16) einreihen
+    Menu_Button(15, "vm_apply", "APPLY", "Save & Apply Settings.") ? Menu_Video_ApplySettings() : 0;
+    Menu_Button(16, "vm_back", "BACK", "Return to Configuration Menu.") ? current_menu = MENU_OPTIONS : 0;
 
     sui_pop_frame();	
 };'''
@@ -302,7 +301,7 @@ force_replace_regex(
     MENU_VIDE,
     r"void\(\) Menu_Video\s*=\s*\{.*?\n\};",
     menu_video_function,
-    "E5: Menu_Video komplett überschreiben"
+    "E5: Menu_Video überschreiben (Layout fixen)"
 )
 
 # ==========================================
