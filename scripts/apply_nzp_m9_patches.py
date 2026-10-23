@@ -54,16 +54,7 @@ MENU_CRED = BASE / "menu_cred.qc"
 # TEIL 0: AUFRÄUMEN & BASIS
 # ==========================================
 
-# 1. Entferne die Aim-Assist-Reste aus dem vorherigen Lauf (falls vorhanden)
-if MENU_VIDE.exists():
-    content = MENU_VIDE.read_text(encoding="utf-8")
-    content = content.replace('"vm_aima", ', '')
-    content = content.replace("float current_aimassist;", "")
-    content = content.replace('current_aimassist = cvar("in_aimassist");', '')
-    content = re.sub(r"void\(\) Menu_Video_UpdateAimAssist = .*?};\s*", "", content)
-    content = re.sub(r"// Aim Assist\s*Menu_Button\(.*?Menu_DrawOptionValue\(14, current_aimassist \? \"ENABLED\" : \"DISABLED\"\);", "", content)
-    MENU_VIDE.write_text(content, encoding="utf-8")
-
+# 1. menu_defs.qc bereinigen
 if MENU_DEFS.exists():
     content = MENU_DEFS.read_text(encoding="utf-8")
     content = content.replace("void() Menu_DrawMapPreview = { };", "")
@@ -139,7 +130,7 @@ patch(SUI_SYS, "void() _sui_menukey_enter =\n{\n\tif (_hover_actions[0] == \"\")
       "D: enter auf Container", "Menu_Coop_Browse_EnterContainer())")
 
 # ==========================================
-# TEIL 2: VIDEO-MENÜ & CUSTOM OPTIONEN (16 Buttons)
+# TEIL 2: VIDEO-MENÜ & CUSTOM OPTIONEN (Reset & Rebuild)
 # ==========================================
 
 # 1. Button-Array (16 Buttons)
@@ -150,14 +141,40 @@ patch_regex(
     "E1: Button-Array erweitern", '"vm_bob"'
 )
 
-# 2. Variablen
-ensure_line(MENU_VIDE, "float current_decals;", "Füge current_decals Variable hinzu")
-ensure_line(MENU_VIDE, "float current_dynlight;", "Füge current_dynlight Variable hinzu")
-ensure_line(MENU_VIDE, "float current_shadows;", "Füge current_shadows Variable hinzu")
-ensure_line(MENU_VIDE, "float current_bob;", "Füge current_bob Variable hinzu")
+# 2. Variablen sauber einfügen (vor StoreCurrentSettings)
+menu_vide_content = MENU_VIDE.read_text(encoding="utf-8")
+# Alle alten current_bla Zeilen löschen, um Dopplungen zu vermeiden
+menu_vide_content = re.sub(r"^float current_(decals|dynlight|shadows|bob|aimassist);\s*$", "", menu_vide_content, flags=re.MULTILINE)
 
-# 3. Werte beim Öffnen auslesen (cl_bobup checken)
-patch(MENU_VIDE, 'current_filter =', 'current_decals = cvar("nzp_decals");\n    current_dynlight = cvar("r_dynamic");\n    current_shadows = cvar("r_shadows");\n    current_bob = (cvar("cl_bobup") > 0);\n    current_filter =', "E3: Variablen auslesen", 'current_bob = (cvar("cl_bobup") > 0);')
+# Die neuen Variablen sauber vor der Funktion einfügen
+if "float current_decals;" not in menu_vide_content:
+    menu_vide_content = menu_vide_content.replace(
+        "void() Menu_Video_StoreCurrentSettings =",
+        "float current_decals;\nfloat current_dynlight;\nfloat current_shadows;\nfloat current_bob;\n\nvoid() Menu_Video_StoreCurrentSettings ="
+    )
+MENU_VIDE.write_text(menu_vide_content, encoding="utf-8")
+print("[OK]   Variablen sauber deklariert")
+
+# 3. Werte beim Öffnen auslesen
+patch_regex(
+    MENU_VIDE,
+    r"void\(\) Menu_Video_StoreCurrentSettings =\s*\{(.*?)\}",
+    '''void() Menu_Video_StoreCurrentSettings =
+{
+    current_fullscreen = cvar("vid_fullscreen");
+    current_showfps = cvar("show_fps");
+    current_vsync = cvar("vid_vsync");
+    current_ultrawide = cvar("vid_ultrawide_limiter");
+    current_particles = cvar("nzp_particles");
+    current_decals = cvar("nzp_decals");
+    current_dynlight = cvar("r_dynamic");
+    current_shadows = cvar("r_shadows");
+    current_bob = (cvar("cl_bobup") > 0);
+    current_filter = (substring(strtoupper(cvar_string("gl_texturemode")), 0, 10) == "GL_NEAREST");
+}''',
+    "E3: StoreCurrentSettings reparieren",
+    'current_bob = (cvar("cl_bobup") > 0);'
+)
 
 # 4. Update-Funktionen
 patch_regex(
@@ -197,7 +214,7 @@ patch_regex(
     "E5: UI-Code einfügen", 'vm_bob", "WEAPON BOB'
 )
 
-# Buttons nach unten schieben (wegen einem Button weniger als vorher)
+# Buttons nach unten schieben
 patch_regex(MENU_VIDE, r"Menu_DrawDivider\([-\d.]+\);", "Menu_DrawDivider(14.25);", "E6: Divider", "14.25")
 patch_regex(MENU_VIDE, r'Menu_Button\([-\d.]+, "vm_apply"', 'Menu_Button(15.5, "vm_apply"', "E7: APPLY", '15.5')
 patch_regex(MENU_VIDE, r'Menu_Button\([-\d.]+, "vm_back"', 'Menu_Button(16.5, "vm_back"', "E8: BACK", '16.5')
