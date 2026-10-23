@@ -2,9 +2,6 @@
 #pragma target fte_5768
 #pragma progs_dat "../build/fte/csprogs.dat"
 
-// WICHTIG: Aktiviert die Menü-Funktionen (#ifdef MENU)
-#define MENU
-
 #pragma includedir "../source/client/"
 #pragma includedir "../source/shared/"
 #pragma includedir "../source/menu/"
@@ -17,24 +14,7 @@ draw.qc
 
 sui_sys.qc
 m_menu.qc
-menu_main.qc         // Hauptmenü
-menu_maps.qc         // Kartenauswahl
-menu_paus.qc         // Pause Menu
-menu_opts.qc         // Options Menu
-menu_vide.qc         // Video Menu
-menu_audi.qc         // Audio Menu
-menu_ctrl.qc         // Control Menu
-menu_gpad.qc         // Gamepad Menu
-menu_bind.qc         // Bindings Menu
-menu_aces.qc         // Accessibility Menu
-menu_coop.qc         // Co-Op Menu
-menu_loby.qc         // Lobby Menu
-menu_bios.qc         // Character Bios
-menu_gset.qc         // Game Settings
-menu_cred.qc         // Credits
-menu_load.qc         // Loading Screen (Wichtig für m_drawloading!)
-
-../source/menu/main.qc // Definiert m_toggle und m_init
+menu_paus.qc         // WICHTIG: Das Pause-Menü für In-Game!
 
 sound_enhanced.qc
 weapon_stats.qc
