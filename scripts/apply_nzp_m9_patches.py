@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-# NZP-M9 Patches: Alle Features (Gore, HUD, Match-Fix, Atmosphäre, Nebel,
+# NZP-M9 Patches: Alle Features (Gore, HUD, Kill-Streak, Atmosphäre/Nebel,
 # Coop-Browser-Navigation, A/B-Switch)
 # Idempotente Version - sicher für bereits gepatchte Dateien.
-# WICHTIG: source/client/main.qc muss die offizielle Struktur haben.
+# WICHTIG: source/client/main.qc und source/menu/sui_sys.qc müssen die
+# offizielle Struktur haben. Die Patches nehmen nur additive Änderungen vor.
 
 import sys
 import re
@@ -186,15 +187,18 @@ patch(SUI_SYS, ENTER_ANCHOR, ENTER_REPLACEMENT,
       "D: Enter um Container-Enter erweitern",
       "Menu_Coop_Browse_EnterContainer())")
 
-AB_ANCHOR = "float(float evtype, float scanx, float chary, float devid) sui_input_event = {\n\tswitch (evtype)"
-AB_REPLACEMENT = """float(float evtype, float scanx, float chary, float devid) sui_input_event = {
+# A/B-Switch: Tauscht die Keycodes vor der Verarbeitung.
+# A (K_GP_A) wird zu ESCAPE (Zurück), B (K_GP_B) wird zu ENTER (Bestätigen).
+AB_ANCHOR = "float(float evtype, float scanx, float chary, float devid) sui_input_event =\n{\n\tswitch (evtype)"
+AB_REPLACEMENT = """float(float evtype, float scanx, float chary, float devid) sui_input_event =
+{
 \tif (evtype == IE_KEYDOWN || evtype == IE_KEYUP) {
 \t\tif (scanx == K_GP_A) scanx = K_ESCAPE;
 \t\telse if (scanx == K_GP_B) scanx = K_ENTER;
 \t}
 \tswitch (evtype)"""
 patch(SUI_SYS, AB_ANCHOR, AB_REPLACEMENT,
-      "FIX: A/B Button Swap",
+      "FIX: A/B Button Swap (A=Zurück, B=Bestätigen)",
       "// NZP-M9: A = Zurueck")
 
 # ==========================================
@@ -352,7 +356,23 @@ patch(CLIENT_MAIN, "void(float apiver, string enginename, float enginever) CSQC_
 patch(CLIENT_MAIN, "noref void() CSQC_WorldLoaded =", "void() CSQC_SpawnClientGore;\n\nnoref void() CSQC_WorldLoaded =", "Forward-Deklaration für CSQC_SpawnClientGore", "void() CSQC_SpawnClientGore;")
 
 # ==========================================
-# TEIL 5: ATMOSPHÄRE-FUNKTIONEN (additiv)
+# TEIL 5: CSQC_Parse_Event – NUR return -> break
+# ==========================================
+# Der Original-Code hat im Hitmarker-Case (case 3) ein "return;".
+# Dieses wird durch "break;" ersetzt, damit die switch-Anweisung korrekt
+# verlassen wird. Es wird KEIN neuer Event-Typ eingeführt.
+HITMARK_ANCHOR = "case 3:\n\t\t\t\t\tif (hitmark_ignore_time > time)\n\t\t\t\t\t\treturn;\n\n\t\t\t\t\thitmark_type = var_1;"
+HITMARK_REPLACEMENT = """case 3:
+					if (hitmark_ignore_time > time)
+						break;
+
+					hitmark_type = var_1;"""
+patch(CLIENT_MAIN, HITMARK_ANCHOR, HITMARK_REPLACEMENT,
+      "CSQC_Parse_Event: return -> break (kein neuer Case)",
+      "hitmark_ignore_time > time)\n\t\t\t\t\t\tbreak;")
+
+# ==========================================
+# TEIL 6: ATMOSPHÄRE-FUNKTIONEN (additiv)
 # ==========================================
 ATMO_FUNCS = """
 // ==========================================
@@ -412,7 +432,7 @@ patch(CLIENT_MAIN, "noref void(float width, float height, float menushown) CSQC_
     "// NZP-M9: Atmosphäre & Nebel")
 
 # ==========================================
-# TEIL 6: HUD-BLOCK (additiv, nach renderscene)
+# TEIL 7: HUD & KILL-STREAK (additiv, nach renderscene)
 # ==========================================
 HUD_ADDITION = """\t// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
 \tCSQC_UpdateAtmosphere();
@@ -472,6 +492,33 @@ HUD_ADDITION = """\t// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
 \t\tdrawfill([g_width*0.5 - 1, g_height*0.5 - 1], [2, 2], cx_color, 0.5, 0);
 \t}
 \t
+\t// ==========================================
+\t// NZP-M9: Kill-Streak-Logik (gekoppelt an vorhandene Hitmarker)
+\t// ==========================================
+\tif (hitmark_type == 1 && time < hitmark_time) {
+\t\tif (time - kill_streak_last_time > 0.5) {
+\t\t\tif (time > kill_streak_reset_time) {
+\t\t\t\tkill_streak_count = 1;
+\t\t\t} else {
+\t\t\t\tkill_streak_count += 1;
+\t\t\t}
+
+\t\t\tkill_streak_last_time = time;
+\t\t\tkill_streak_reset_time = time + 3.0;
+
+\t\t\tif (kill_streak_count == 2) {
+\t\t\t\tkill_streak_text = "DOUBLE KILL";
+\t\t\t\tkill_streak_display_time = time + 2.5;
+\t\t\t} else if (kill_streak_count == 3) {
+\t\t\t\tkill_streak_text = "TRIPLE KILL";
+\t\t\t\tkill_streak_display_time = time + 2.5;
+\t\t\t} else if (kill_streak_count >= 4) {
+\t\t\t\tkill_streak_text = "MULTI KILL!";
+\t\t\t\tkill_streak_display_time = time + 2.5;
+\t\t\t}
+\t\t}
+\t}
+
 \tif (serverkey("pausestate") != "1") {
 \t\tsui_begin(g_width, g_height);
 \t\tsui_set_align([SUI_ALIGN_END, SUI_ALIGN_START]);
@@ -510,7 +557,7 @@ HUD_ADDITION = """\t// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
 
 patch(CLIENT_MAIN, "\t//does what you think it does\n\trenderscene();",
     HUD_ADDITION,
-    "HUD-Block nach renderscene() einfügen",
+    "HUD-Block inkl. Kill-Streak nach renderscene() einfügen",
     "--- NZP-M9 CUSTOM HUD ---")
 
 print("\n=== Alle Patches erfolgreich angewendet (idempotent). ===")
