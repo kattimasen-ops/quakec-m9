@@ -13,16 +13,16 @@ def patch(path: Path, anchor: str, replacement: str, description: str, marker: s
         path.write_text(content.replace(anchor, replacement, 1), encoding="utf-8")
         print(f"[OK]   {description}")
 
-def patch_regex(path: Path, pattern: str, replacement: str, description: str, marker: str):
+def force_replace_regex(path: Path, pattern: str, replacement: str, description: str):
     if not path.exists(): sys.exit(1)
     content = path.read_text(encoding="utf-8")
-    if marker in content:
-        print(f"[SKIP] {description}: bereits gepatcht")
-        return
     new_content, count = re.subn(pattern, replacement, content, count=1, flags=re.DOTALL)
-    if count == 1:
+    if count >= 1:
         path.write_text(new_content, encoding="utf-8")
-        print(f"[OK]   {description}")
+        print(f"[OK]   {description} (Force-Replaced)")
+    else:
+        print(f"[FATAL] {description}: Konnte nicht ersetzt werden!")
+        sys.exit(1)
 
 def ensure_line(path: Path, line: str, description: str) -> None:
     if not path.exists(): return
@@ -53,8 +53,6 @@ MENU_CRED = BASE / "menu_cred.qc"
 # ==========================================
 # TEIL 0: AUFRÄUMEN & BASIS
 # ==========================================
-
-# 1. menu_defs.qc bereinigen
 if MENU_DEFS.exists():
     content = MENU_DEFS.read_text(encoding="utf-8")
     content = content.replace("void() Menu_DrawMapPreview = { };", "")
@@ -68,17 +66,14 @@ ensure_line(FTE_QC, "void(float dest) setkeydest = #602;", "Füge setkeydest Bui
 
 ensure_line(MENU_DEFS, "float last_input_deviceid;", "Füge last_input_deviceid hinzu")
 ensure_line(MENU_DEFS, "void(float wantmode) m_toggle;", "Füge m_toggle Deklaration hinzu")
-
 append_safe(MENU_DEFS, "\n#ifndef MENU\nvoid() Menu_DrawMapPreview = { };\n#endif\n", "Füge menu_defs.qc Dummy hinzu", "void() Menu_DrawMapPreview = { };")
 
 patch(CLIENT_MAIN, "float menu_active;", "// float menu_active;", "Entferne doppelte menu_active Definition", "// float menu_active;")
-
 MENU_CRED.write_text("void() Menu_Credits = { Menu_DrawBackground(); Menu_DrawTitle(\"CREDITS\"); Menu_DrawMapPanel(); sui_text([150, 100], MENU_TEXT_MEDIUM, \"Credits are currently disabled in this build.\", [1, 1, 1], 1, 0); Menu_Button(-1, \"cr_back\", \"BACK\", \"Return to Main Menu.\") ? current_menu = MENU_MAIN : 0; sui_pop_frame(); };", encoding="utf-8")
 
 # ==========================================
 # TEIL 1: SERVER-BROWSER GAMEPAD NAVIGATION
 # ==========================================
-
 patch(MENU_COOP, "int num_cached_servers;", "int num_cached_servers;\nfloat coop_browse_selected;", "A1: Variable coop_browse_selected", "float coop_browse_selected;")
 patch(MENU_COOP, "void() Menu_Coop_Browse =\n{\n\tMenu_Coop_UpdateCache();", 
       "void() Menu_Coop_Browse =\n{\n\tstatic float _browse_init;\n\tif (!_browse_init) {\n\t\tcoop_browse_selected = -1;\n\t\t_browse_init = true;\n\t}\n\tMenu_Coop_UpdateCache();\n\tif (coop_browse_selected < -1) coop_browse_selected = -1;\n\tif (num_cached_servers > 0 && coop_browse_selected >= num_cached_servers)\n\t\tcoop_browse_selected = num_cached_servers - 1;",
@@ -114,11 +109,9 @@ string(string cur, float direction) Menu_Coop_Browse_Navigate =
 float() Menu_Coop_Browse_EnterContainer = { if (num_cached_servers <= 0) return FALSE; coop_browse_selected = 0; return TRUE; };
 """
 patch(MENU_COOP, "#undef PREVBUTTON_FUNC", "#undef PREVBUTTON_FUNC" + NAV_BLOCK, "B: Navigate- + EnterContainer-Funktionen", "Menu_Coop_Browse_Navigate")
-
 patch(SUI_SYS, "#define printf(x, ...) print(sprintf(x, __VA_ARGS__))\n\n#endif",
       "#define printf(x, ...) print(sprintf(x, __VA_ARGS__))\n\n#endif\n\nstring(string cur, float direction) Menu_Coop_Browse_Navigate;\nfloat() Menu_Coop_Browse_EnterContainer;",
       "C1: Forward-Declarations in sui_sys.qc", "Menu_Coop_Browse_Navigate;")
-
 patch(SUI_SYS, "void() _sui_menukey_downarrow =\n{\n\tstring current_hovered_option = _hover_actions[0];\n\n\tswitch(current_menu) {",
       "void() _sui_menukey_downarrow =\n{\n\tstring current_hovered_option = _hover_actions[0];\n\tif (current_menu == MENU_COOPBROWSE) {\n\t\tstring nav = Menu_Coop_Browse_Navigate(current_hovered_option, 1);\n\t\tif (nav != \"\") { _hover_actions[0] = nav; last_hovered_id = \"\"; _hover_action_count = 1; return; }\n\t}\n\tswitch(current_menu) {",
       "C2: downarrow erweitern", "Menu_Coop_Browse_Navigate(current_hovered_option, 1)")
@@ -130,35 +123,39 @@ patch(SUI_SYS, "void() _sui_menukey_enter =\n{\n\tif (_hover_actions[0] == \"\")
       "D: enter auf Container", "Menu_Coop_Browse_EnterContainer())")
 
 # ==========================================
-# TEIL 2: VIDEO-MENÜ & CUSTOM OPTIONEN (Reset & Rebuild)
+# TEIL 2: VIDEO-MENÜ KOMPLETT ÜBERSCHREIBEN (BULLETPROOF)
 # ==========================================
 
 # 1. Button-Array (16 Buttons)
-patch_regex(
+force_replace_regex(
     MENU_VIDE,
     r"string menu_video_buttons\[\d+\] = \{.*?\};",
     'string menu_video_buttons[16] = {"vm_resol", "vm_fulls", "vm_shfps", "vm_maxps", "vm_vsync", "vm_fov", "vm_gamma", "vm_uwide", "vm_parts", "vm_decal", "vm_dynlgt", "vm_shdw", "vm_bob", "vm_filtr", "vm_apply", "vm_back"};',
-    "E1: Button-Array erweitern", '"vm_bob"'
+    "E1: Button-Array überschreiben"
 )
 
-# 2. Variablen sauber einfügen (vor StoreCurrentSettings)
-menu_vide_content = MENU_VIDE.read_text(encoding="utf-8")
-# Alle alten current_bla Zeilen löschen, um Dopplungen zu vermeiden
-menu_vide_content = re.sub(r"^float current_(decals|dynlight|shadows|bob|aimassist);\s*$", "", menu_vide_content, flags=re.MULTILINE)
-
-# Die neuen Variablen sauber vor der Funktion einfügen
-if "float current_decals;" not in menu_vide_content:
-    menu_vide_content = menu_vide_content.replace(
-        "void() Menu_Video_StoreCurrentSettings =",
-        "float current_decals;\nfloat current_dynlight;\nfloat current_shadows;\nfloat current_bob;\n\nvoid() Menu_Video_StoreCurrentSettings ="
-    )
-MENU_VIDE.write_text(menu_vide_content, encoding="utf-8")
-print("[OK]   Variablen sauber deklariert")
-
-# 3. Werte beim Öffnen auslesen
-patch_regex(
+# 2. Variablen komplett überschreiben
+force_replace_regex(
     MENU_VIDE,
-    r"void\(\) Menu_Video_StoreCurrentSettings =\s*\{(.*?)\}",
+    r"float current_selected_vidmode;.*?float current_filter;",
+    '''float current_selected_vidmode;
+float current_fullscreen;
+float current_showfps;
+float current_vsync;
+float current_ultrawide;
+float current_particles;
+float current_decals;
+float current_dynlight;
+float current_shadows;
+float current_bob;
+float current_filter;''',
+    "E2: Variablen überschreiben"
+)
+
+# 3. StoreCurrentSettings komplett überschreiben
+force_replace_regex(
+    MENU_VIDE,
+    r"void\(\) Menu_Video_StoreCurrentSettings =\s*\{.*?\}",
     '''void() Menu_Video_StoreCurrentSettings =
 {
     current_fullscreen = cvar("vid_fullscreen");
@@ -172,72 +169,153 @@ patch_regex(
     current_bob = (cvar("cl_bobup") > 0);
     current_filter = (substring(strtoupper(cvar_string("gl_texturemode")), 0, 10) == "GL_NEAREST");
 }''',
-    "E3: StoreCurrentSettings reparieren",
-    'current_bob = (cvar("cl_bobup") > 0);'
+    "E3: StoreCurrentSettings überschreiben"
 )
 
-# 4. Update-Funktionen
-patch_regex(
-    MENU_VIDE,
-    r"void\(\) Menu_Video_UpdateUltrawide =",
-    '''void() Menu_Video_UpdateDecals = { Menu_PlaySound(MENU_SND_ENTER); current_decals = !current_decals; cvar_set("nzp_decals", ftos(current_decals)); };
+# 4. Update-Funktionen anhängen
+if "Menu_Video_UpdateDynLight" not in MENU_VIDE.read_text(encoding="utf-8"):
+    patch(MENU_VIDE, "void() Menu_Video_UpdateUltrawide =", '''void() Menu_Video_UpdateDecals = { Menu_PlaySound(MENU_SND_ENTER); current_decals = !current_decals; cvar_set("nzp_decals", ftos(current_decals)); };
 void() Menu_Video_UpdateDynLight = { Menu_PlaySound(MENU_SND_ENTER); current_dynlight = !current_dynlight; cvar_set("r_dynamic", ftos(current_dynlight)); };
 void() Menu_Video_UpdateShadows = { Menu_PlaySound(MENU_SND_ENTER); current_shadows = !current_shadows; cvar_set("r_shadows", ftos(current_shadows)); };
 void() Menu_Video_UpdateBob = { Menu_PlaySound(MENU_SND_ENTER); current_bob = !current_bob; cvar_set("cl_bobup", current_bob ? "0.02" : "0"); cvar_set("cl_bobside", current_bob ? "0.02" : "0"); };
-void() Menu_Video_UpdateUltrawide =''',
-    "E4: Update-Funktionen", "Menu_Video_UpdateBob"
-)
 
-# 5. UI-Code anpassen
-patch_regex(
-    MENU_VIDE,
-    r"// Decals.*?Menu_DrawOptionValue\(\d+, filt_string\);",
-    '''// Decals
-    Menu_Button(10, "vm_decal", "DECALS", "Toggle Blood/Bullet Holes.") ? Menu_Video_UpdateDecals() : 0;
-    Menu_DrawOptionValue(10, current_decals ? "ENABLED" : "DISABLED");
+void() Menu_Video_UpdateUltrawide =''', "E4: Update-Funktionen hinzufügen", "Menu_Video_UpdateDynLight")
+
+# 5. DIE KOMPLETTE Menu_Video FUNKTION ÜBERSCHREIBEN
+menu_video_function = '''
+void() Menu_Video =
+{
+    if (!menu_video_init)
+        Menu_Video_Init();
+    
+    Menu_DrawBackground();
+    Menu_DrawTitle("VIDEO OPTIONS");
+
+    Menu_DrawMapPanel();
+
+    // Resolution
+    Menu_Button(1, "vm_resol", "RESOLUTION", "Window size adjustment.") ? Menu_Video_UpdateVideoMode() : 0;
+    if (current_selected_vidmode > menu_video_modes) current_selected_vidmode = 0;
+    string resolution_string = sprintf("%dx%d (%d:%d)", video_modes[current_selected_vidmode].size[0], 
+    video_modes[current_selected_vidmode].size[1], video_modes[current_selected_vidmode].ratio[0], 
+    video_modes[current_selected_vidmode].ratio[1]);
+    Menu_DrawOptionValue(1, resolution_string);
+
+    // Fullscreen
+    Menu_Button(2, "vm_fulls", "FULLSCREEN", "Change Fullscreen Mode.") ? Menu_Video_UpdateFullscreen() : 0;
+    string fullscreen_string = "";
+    switch(current_fullscreen) {
+        case 0: fullscreen_string = "DISABLED"; break;
+        case 1: fullscreen_string = "ENABLED"; break;
+        case 2: fullscreen_string = "BORDERLESS"; break;
+        default: break;
+    }
+    Menu_DrawOptionValue(2, fullscreen_string);
+
+    // Show FPS
+    Menu_Button(3, "vm_shfps", "SHOW FPS", "Toggles display of FPS Values.") ? Menu_Video_UpdateShowFPS() : 0;
+    string showfps_string = "";
+    switch(current_showfps) {
+        case 0: showfps_string = "DISABLED"; break;
+        case 1: showfps_string = "ENABLED"; break;
+        case 2: showfps_string = "VERBOSE"; break;
+        default: break;
+    }
+    Menu_DrawOptionValue(3, showfps_string);
+
+    // Max FPS
+    Menu_Button(4, "vm_maxps", "MAX FPS", "Configure Maximum FPS Value.") ? 0 : 0;
+    Menu_CvarSlider(4, "vm_maxps", [10, 500, 490], "cl_maxfps", true, false, false);
+
+    // VSync
+    Menu_Button(5, "vm_vsync", "VSYNC", "Sync Framerate with Display.") ? Menu_Video_UpdateVsync() : 0;
+    string vsync_string = "";
+    if (current_vsync) vsync_string = "ENABLED";
+    else vsync_string = "DISABLED";
+    Menu_DrawOptionValue(5, vsync_string);
+
+    // Field of View
+    Menu_Button(6, "vm_fov", "FIELD OF VIEW", "Change Camera Field of View.") ? 0 : 0;
+    Menu_CvarSlider(6, "vm_fov", [10, 150, 140], "fov", true, false, false);
+
+    // Gamma
+    Menu_Button(7, "vm_gamma", "GAMMA", "Adjust game Black Level.") ? 0 : 0;
+    Menu_CvarSlider(7, "vm_gamma", [0.3, 2, 17], "gamma", false, true, false);
+
+    // Ultrawide Mode
+    Menu_Button(8, "vm_uwide", "ULTRAWIDE MODE", "Condenses HUD closer to center of Display.") ? Menu_Video_UpdateUltrawide() : 0;
+    string wide_string = "";
+    if (current_ultrawide) wide_string = "ENABLED";
+    else wide_string = "DISABLED";
+    Menu_DrawOptionValue(8, wide_string);
+
+    // Particles
+    Menu_Button(9, "vm_parts", "PARTICLES", "Toggle Particle Effects for Performance.") ? Menu_Video_UpdateParticles() : 0;
+    string part_string = "";
+    if (current_particles) part_string = "ENABLED";
+    else part_string = "DISABLED";
+    Menu_DrawOptionValue(9, part_string);
+
+    // Decals
+    Menu_Button(10, "vm_decal", "DECALS", "Toggle Bullet Holes and Blood.") ? Menu_Video_UpdateDecals() : 0;
+    string decal_string = "";
+    if (current_decals) decal_string = "ENABLED";
+    else decal_string = "DISABLED";
+    Menu_DrawOptionValue(10, decal_string);
 
     // Dynamic Lights
     Menu_Button(11, "vm_dynlgt", "DYNAMIC LIGHTS", "Toggle Realtime Lights.") ? Menu_Video_UpdateDynLight() : 0;
-    Menu_DrawOptionValue(11, current_dynlight ? "ENABLED" : "DISABLED");
+    string dynlgt_string = "";
+    if (current_dynlight) dynlgt_string = "ENABLED";
+    else dynlgt_string = "DISABLED";
+    Menu_DrawOptionValue(11, dynlgt_string);
 
     // Shadows
     Menu_Button(12, "vm_shdw", "SHADOWS", "Toggle Entity Shadows.") ? Menu_Video_UpdateShadows() : 0;
-    Menu_DrawOptionValue(12, current_shadows ? "ENABLED" : "DISABLED");
+    string shadows_string = "";
+    if (current_shadows) shadows_string = "ENABLED";
+    else shadows_string = "DISABLED";
+    Menu_DrawOptionValue(12, shadows_string);
 
     // Weapon Bob
     Menu_Button(13, "vm_bob", "WEAPON BOB", "Toggle Weapon Swaying.") ? Menu_Video_UpdateBob() : 0;
-    Menu_DrawOptionValue(13, current_bob ? "ENABLED" : "DISABLED");
+    string bob_string = "";
+    if (current_bob) bob_string = "ENABLED";
+    else bob_string = "DISABLED";
+    Menu_DrawOptionValue(13, bob_string);
 
     // Texture Filtering
-    Menu_Button(14, "vm_filtr", "TEXTURE FILTERING", "Choose Filter Mode.") ? Menu_Video_UpdateFiltering() : 0;
-    Menu_DrawOptionValue(14, current_filter ? "NEAREST" : "LINEAR");''',
-    "E5: UI-Code einfügen", 'vm_bob", "WEAPON BOB'
-)
+    Menu_Button(14, "vm_filtr", "TEXTURE FILTERING", "Choose 3D Environment Filtering Mode.") ? Menu_Video_UpdateFiltering() : 0;
+    string filt_string = "";
+    if (current_filter) filt_string = "NEAREST";
+    else filt_string = "LINEAR";
+    Menu_DrawOptionValue(14, filt_string);
 
-# Buttons nach unten schieben
-patch_regex(MENU_VIDE, r"Menu_DrawDivider\([-\d.]+\);", "Menu_DrawDivider(14.25);", "E6: Divider", "14.25")
-patch_regex(MENU_VIDE, r'Menu_Button\([-\d.]+, "vm_apply"', 'Menu_Button(15.5, "vm_apply"', "E7: APPLY", '15.5')
-patch_regex(MENU_VIDE, r'Menu_Button\([-\d.]+, "vm_back"', 'Menu_Button(16.5, "vm_back"', "E8: BACK", '16.5')
+    Menu_DrawDivider(14.25);
+    Menu_Button(-2, "vm_apply", "APPLY", "Save & Apply Settings.") ? Menu_Video_ApplySettings() : 0;
+    Menu_Button(-1, "vm_back", "BACK", "Return to Configuration Menu.") ? current_menu = MENU_OPTIONS : 0;
+
+    sui_pop_frame();	
+};'''
+
+force_replace_regex(
+    MENU_VIDE,
+    r"void\(\) Menu_Video\s*=\s*\{.*?\n\};",
+    menu_video_function,
+    "E5: Menu_Video komplett überschreiben"
+)
 
 # ==========================================
 # TEIL 3: CUSTOM HANDHELD EDITS (Lila & Version)
 # ==========================================
 
-# 1. Lila Farben für Menü-Highlights (statt Rot)
 content = MENU_MAIN_MENU.read_text(encoding="utf-8")
 content = content.replace("is_hovered ? [1, 0, 0] : [1, 1, 1]", "is_hovered ? [0.8, 0.2, 1] : [1, 1, 1]") 
 content = content.replace("[0.4, 0, 0]", "[0.6, 0, 0.8]") 
 MENU_MAIN_MENU.write_text(content, encoding="utf-8")
 print("[OK]   Menü-Farben auf Lila geändert")
 
-# 2. Versionstext im Hauptmenü ändern
-patch(
-    MAIN_QC,
-    'build_datetime = fgets(file);',
-    'build_datetime = "M9 Pro Custom Build";\n        // build_datetime = fgets(file);',
-    "Custom Version String im Menü",
-    "M9 Pro Custom Build"
-)
+patch(MAIN_QC, 'build_datetime = fgets(file);', 'build_datetime = "M9 Pro Custom Build";\n        // build_datetime = fgets(file);', "Custom Version String im Menü", "M9 Pro Custom Build")
 
 print("\n=== Alle Patches erfolgreich angewendet. ===")
 sys.exit(0)
