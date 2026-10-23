@@ -73,17 +73,31 @@ MENU_CRED = BASE / "menu_cred.qc"
 # TEIL 0: FEHLENDE DEKLARATIONEN & BUILTINS
 # ==========================================
 
+# 1. Aufräumen: Entferne den alten, fehlerhaften Dummy aus der menu_defs.qc
+if MENU_DEFS.exists():
+    content = MENU_DEFS.read_text(encoding="utf-8")
+    # Lösche die Zeilen, die in vorherigen Läufen ohne #ifndef eingefügt wurden
+    content = content.replace("void() Menu_DrawMapPreview = { };", "")
+    content = content.replace("float last_input_deviceid;", "")
+    content = content.replace("void(float wantmode) m_toggle;", "")
+    content = content.replace("// --- NZP-M9 Forward Declarations & Missing Variables ---", "")
+    content = content.replace("// -----------------------------------------------------", "")
+    MENU_DEFS.write_text(content, encoding="utf-8")
+    print("[OK]   Alte Dummy-Einträge aus menu_defs.qc bereinigt")
+
 ensure_line(FTE_QC, ".float is_in_menu;", "Füge is_in_menu Feld hinzu")
 ensure_line(FTE_QC, "void(string soundname, float channel, float volume) localsound_enhanced = { localsound(soundname, channel, volume); };", "Füge localsound_enhanced Wrapper hinzu")
 ensure_line(FTE_QC, "void(float dest) setkeydest = #602;", "Füge setkeydest Builtin hinzu")
 
-# WICHTIG: Fehlende Variablen und Funktionen für das In-Game-Menü hinzufügen
+# 2. Sauberer #ifndef MENU Block (verhindert Konflikte mit menu.src)
 menu_defs_injection = """
+#ifndef MENU
 // --- NZP-M9 Forward Declarations & Missing Variables ---
 void(float wantmode) m_toggle;
 float last_input_deviceid; 
 void() Menu_DrawMapPreview = { };
 // -----------------------------------------------------
+#endif
 """
 append_safe(MENU_DEFS, menu_defs_injection, "Füge menu_defs.qc fehlende Variablen hinzu", "NZP-M9 Forward Declarations")
 
