@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 # NZP-M9 Patches: Alle Features (HUD, HIT/KILL, Kill-Streak, Atmosphäre/Nebel,
 # Coop-Browser-Navigation, A/B-Switch, Video-Optionen)
-# Gore-Effekte laufen unverändert über das bestehende Partikelsystem.
-# Idempotent. WICHTIG: main.qc und sui_sys.qc müssen die offizielle Struktur haben.
+# Credits bleiben deaktiviert (Kurzversion) - offizielle menu_cred.qc referenziert
+# moeglicherweise fehlende Assets.
+# Gore-Effekte laufen unveraendert ueber das bestehende Partikelsystem.
+# Idempotent. WICHTIG: main.qc und sui_sys.qc muessen die offizielle Struktur haben.
 
 import sys
 import re
@@ -62,7 +64,13 @@ ensure_line(MENU_DEFS, "float last_input_deviceid;", "Füge last_input_deviceid 
 ensure_line(MENU_DEFS, "void(float wantmode) m_toggle;", "Füge m_toggle Deklaration hinzu")
 append_safe(MENU_DEFS, "\n#ifndef MENU\nvoid() Menu_DrawMapPreview = { };\n#endif\n", "Füge menu_defs.qc Dummy hinzu", "void() Menu_DrawMapPreview = { };")
 
-MENU_CRED.write_text("void() Menu_Credits = { Menu_DrawBackground(); Menu_DrawTitle(\"CREDITS\"); Menu_DrawMapPanel(); sui_text([150, 100], MENU_TEXT_MEDIUM, \"Credits are currently disabled in this build.\", [1, 1, 1], 1, 0); Menu_Button(-1, \"cr_back\", \"BACK\", \"Return to Main Menu.\") ? current_menu = MENU_MAIN : 0; sui_pop_frame(); };", encoding="utf-8")
+# Credits bleiben deaktiviert (Kurzversion), da die offizielle menu_cred.qc
+# Assets referenziert, die im Fork fehlen koennen. Idempotent ueber Marker.
+if MENU_CRED.exists():
+    cred_content = MENU_CRED.read_text(encoding="utf-8")
+    if "Credits are currently disabled" not in cred_content:
+        MENU_CRED.write_text("void() Menu_Credits = { Menu_DrawBackground(); Menu_DrawTitle(\"CREDITS\"); Menu_DrawMapPanel(); sui_text([150, 100], MENU_TEXT_MEDIUM, \"Credits are currently disabled in this build.\", [1, 1, 1], 1, 0); Menu_Button(-1, \"cr_back\", \"BACK\", \"Return to Main Menu.\") ? current_menu = MENU_MAIN : 0; sui_pop_frame(); };", encoding="utf-8")
+        print("[OK]   Credits deaktiviert (Kurzversion)")
 
 patch(CLIENT_MAIN, "float menu_active;", "// float menu_active;", "Entferne doppelte menu_active Definition", "// float menu_active;")
 
@@ -133,6 +141,17 @@ string(string cur, float direction) Menu_Coop_Browse_Navigate =
 float() Menu_Coop_Browse_EnterContainer = { if (num_cached_servers <= 0) return FALSE; coop_browse_selected = 0; return TRUE; };
 """
 patch(MENU_COOP, "#undef PREVBUTTON_FUNC", "#undef PREVBUTTON_FUNC" + NAV_BLOCK, "B: Navigate- + EnterContainer-Funktionen", "Menu_Coop_Browse_Navigate")
+
+# ==========================================
+# TEIL 1c: SERVER-BROWSER HINWEIS AKTUALISIEREN
+# ==========================================
+# Der Original-Hinweis behauptet faelschlich, Gamepads seien nicht unterstuetzt.
+# Da A/B-Swap und D-Pad-Navigation gepatcht sind, stimmt das nicht mehr.
+patch(MENU_COOP,
+    '"NOTE: Keyboard or gamepad is not supported for server selection."',
+    '"NOTE: D-Pad UP/DOWN to scroll servers, B to select, A to go back."',
+    "Server Browser: Gamepad-Hinweis aktualisieren",
+    "D-Pad UP/DOWN to scroll servers")
 
 # ==========================================
 # TEIL 2: SUI_SYS.QC – NAVIGATION & A/B-SWITCH
