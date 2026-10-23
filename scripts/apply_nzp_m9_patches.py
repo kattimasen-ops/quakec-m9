@@ -315,7 +315,6 @@ patch(
 # TEIL 4: CUSTOM HUD & VISUALS (KILLS, TIME, DAMAGE NUMBERS)
 # ==========================================
 
-# 1. Variablen deklarieren
 patch(
     CLIENT_MAIN,
     "noref void() CSQC_WorldLoaded =",
@@ -328,7 +327,6 @@ noref void() CSQC_WorldLoaded =""",
     "float dmg_text_time;"
 )
 
-# 2. Damage Numbers im CSQC_Parse_Event triggern
 patch(
     CLIENT_MAIN,
     'case 3:\n\t\t\t\t\tif (hitmark_ignore_time > time)\n\t\t\t\t\t\treturn;\n\n\t\t\t\t\thitmark_type = var_1;',
@@ -337,7 +335,7 @@ patch(
     "dmg_text_str = \"KILL\";"
 )
 
-# 3. HUD Zeichnen (Echte Kills aus dem Scoreboard, Time, Damage Numbers)
+# Hier ist der Fix: Wir holen uns die Kills direkt aus dem Entity
 patch(
     CLIENT_MAIN,
     "\tif (cvar(\"chase_active\")) {\n\t\tChase_Update();\n\t}\n\n\t//does what you think it does\n\trenderscene();",
@@ -349,35 +347,56 @@ patch(
 \trenderscene();
 
 \t// --- NZP-M9 KILLS, TIME & DAMAGE NUMBERS ---
-\t// Verhindert, dass das HUD das Pause-Menü blockiert
 \tif (serverkey("pausestate") != "1") {
 \t\tsui_begin(g_width, g_height);
 \t\t
 \t\tsui_set_align([SUI_ALIGN_END, SUI_ALIGN_START]);
 \t\t
-\t\t// Kill Counter oben rechts (Direkt vom Server-Scoreboard abgerufen)
-\t\tfloat real_kills = stof(getplayerkeyvalue(player_localnum, "frags"));
+\t\t// Kills direkt aus dem CSQC-Entity des Spielers lesen
+\t\tfloat real_kills = 0;
+\t\tentity my_player = findfloat(world, entnum, player_localentnum);
+\t\tif (my_player) {
+\t\t\treal_kills = my_player.kills;
+\t\t}
+\t\t
 \t\tsui_text([-10, 10], MENU_TEXT_MEDIUM, sprintf("KILLS: %d", real_kills), [0.8, 0.2, 1], 1, 0);
 \t\t
-\t\t// Survival Time
 \t\tfloat mins = floor(cltime / 60);
 \t\tfloat secs = floor(cltime % 60);
 \t\tsui_text([-10, 30], MENU_TEXT_SMALL, sprintf("TIME: %02d:%02d", mins, secs), [1, 1, 1], 1, 0);
 
-\t\t// Damage Numbers (Kleiner und näher am Fadenkreuz)
 \t\tif (time < dmg_text_time) {
-\t\t\tfloat diff = dmg_text_time - time; // 0.8 -> 0.0
-\t\t\tfloat offset_y = 60 - ((0.8 - diff) * 40); // Floatet von 60 nach 20 hoch
-\t\t\tvector dmg_color = [1, 0.2, 1]; // Lila
-\t\t\tif (dmg_text_str == "KILL") dmg_color = [1, 0, 0]; // Rot bei Kill
+\t\t\tfloat diff = dmg_text_time - time;
+\t\t\tfloat offset_y = 60 - ((0.8 - diff) * 40);
+\t\t\tvector dmg_color = [1, 0.2, 1];
+\t\t\tif (dmg_text_str == "KILL") dmg_color = [1, 0, 0];
 
 \t\t\tsui_set_align([SUI_ALIGN_CENTER, SUI_ALIGN_CENTER]);
 \t\t\tsui_text([0, -offset_y], MENU_TEXT_MEDIUM, dmg_text_str, dmg_color, diff, 0);
 \t\t}
 \t\tsui_end();
 \t}""",
-    "Zeichne HUD (Echte Kills vom Server)",
-    "float real_kills = stof(getplayerkeyvalue(player_localnum, \"frags\"));"
+    "Zeichne HUD (Kills direkt aus Entität)",
+    "entity my_player = findfloat(world, entnum, player_localentnum);"
+)
+
+# ==========================================
+# TEIL 5: GAMEPAD BUTTON SWAP (A = Zurück, B = Bestätigen)
+# ==========================================
+patch(
+    CLIENT_MAIN,
+    "if (current_menu != MENU_NONE)\n\t{\n\t\treturn sui_input_event(evtype, scanx, chary, devid);\n\t}",
+    """if (current_menu != MENU_NONE)
+\t{
+\t\t// NZP-M9 Gamepad Swap: A wird zu Escape (Zurück), B wird zu Enter (Bestätigen)
+\t\tif (evtype == IE_KEYDOWN || evtype == IE_KEYUP) {
+\t\t\tif (scanx == K_GP_A) scanx = K_ESCAPE;
+\t\t\telse if (scanx == K_GP_B) scanx = K_ENTER;
+\t\t}
+\t\treturn sui_input_event(evtype, scanx, chary, devid);
+\t}""",
+    "Swap A/B buttons in menus",
+    "if (scanx == K_GP_A) scanx = K_ESCAPE;"
 )
 
 print("\n=== Alle Patches erfolgreich angewendet. ===")
