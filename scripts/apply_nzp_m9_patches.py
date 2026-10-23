@@ -128,7 +128,7 @@ patch(SUI_SYS, "void() _sui_menukey_enter =\n{\n\tif (_hover_actions[0] == \"\")
       "D: enter auf Container", "Menu_Coop_Browse_EnterContainer())")
 
 # ==========================================
-# TEIL 1.5: FIX A/B Tausch (in sui_sys.qc, gilt für CSQC und MENU)
+# TEIL 1.5: FIX A/B Tausch (in sui_sys.qc)
 # ==========================================
 patch(
     SUI_SYS,
@@ -319,7 +319,7 @@ force_replace_regex(
 patch(MAIN_QC, 'build_datetime = fgets(file);', 'build_datetime = "M9 Pro Custom Build";\n        // build_datetime = fgets(file);', "Custom Version String im Menü", "M9 Pro Custom Build")
 
 # ==========================================
-# TEIL 3: ADVANCED PARTICLES (Memory Safe Version)
+# TEIL 3: ADVANCED PARTICLES
 # ==========================================
 if (PARTICLES_DIR / "m9_spikeset.cfg").exists():
     (PARTICLES_DIR / "m9_spikeset.cfg").unlink()
@@ -334,7 +334,7 @@ patch(
 )
 
 # ==========================================
-# TEIL 4: CUSTOM HUD & VISUALS (FIX KILL COUNTER)
+# TEIL 4: CUSTOM HUD (FIX KILL COUNTER)
 # ==========================================
 patch(
     CLIENT_MAIN,
@@ -405,24 +405,8 @@ patch(
 )
 
 # ==========================================
-# TEIL 5: GAMEPAD BUTTON SWAP (A = Zurück, B = Bestätigen)
+# TEIL 6: EXTREME GORE MOD
 # ==========================================
-patch(
-    CLIENT_MAIN,
-    "if (current_menu != MENU_NONE)\n\t{\n\t\treturn sui_input_event(evtype, scanx, chary, devid);\n\t}",
-    """if (current_menu != MENU_NONE)
-\t{
-\t\treturn sui_input_event(evtype, scanx, chary, devid);
-\t}""",
-    "Gamepad Swap (Wird jetzt in sui_sys.qc gemacht)",
-    "Gamepad Swap (Wird jetzt in sui_sys.qc gemacht)"
-)
-
-# ==========================================
-# TEIL 6: EXTREME GORE MOD (Server-Code - braucht progs.dat)
-# ==========================================
-
-# 1. Mehr Blut bei Treffern
 patch(
     CLIENTFUNCS_QC,
     "#ifdef FTE\n\n\tFTE_RunParticleEffect(world, CSQC_PART_BLOODIMPACT, org, 0, world);\n\n#else\n\n\tparticle (org, vel*0.1, 73, damage*2);\n\n#endif // FTE",
@@ -430,7 +414,6 @@ patch(
 
 \tFTE_RunParticleEffect(world, CSQC_PART_BLOODIMPACT, org, 0, world);
 \t
-\t// NZP-M9 EXTREME GORE: Spawne mehr Blut bei starkem Schaden
 \tif (damage > 20) {
 \t\tFTE_RunParticleEffect(world, CSQC_PART_BLOODIMPACT, org, 0, world);
 \t\tFTE_RunParticleEffect(world, CSQC_PART_BLOODIMPACT, org, 0, world);
@@ -445,7 +428,6 @@ patch(
     "NZP-M9 EXTREME GORE: Spawne mehr Blut"
 )
 
-# 2. Arme viel leichter abtrennen
 patch(
     DAMAGE_QC,
     "if (WepDef_WeaponCanGibEnemy(self.weapon) && body_ent.larm.owner.rarm.deadflag && body_ent.larm.deadflag)",
@@ -461,7 +443,6 @@ patch(
     "random() < 0.5"
 )
 
-# 3. Fake Bein-Gibs bei Treffern im unteren Torso
 patch(
     DAMAGE_QC,
     'case "ai_zombie":\n\t\t\t\tif (trace_endpos_z < hit_ent.origin_z) {\n\t\t\t\t\tf_damage = damage*getWeaponMultiplier(self.weapon, self.perks, LOWER_TORSO_X);\n\t\t\t\t\thit_ent.hit_region = HIT_REGION_TORSO_LOWER;\n\t\t\t\t}',
@@ -470,7 +451,6 @@ patch(
 \t\t\t\t\tf_damage = damage*getWeaponMultiplier(self.weapon, self.perks, LOWER_TORSO_X);
 \t\t\t\t\thit_ent.hit_region = HIT_REGION_TORSO_LOWER;
 \t\t\t\t\t
-\t\t\t\t\t// NZP-M9 EXTREME GORE: Fake Bein-Gibs spawnen
 \t\t\t\t\tif (WepDef_WeaponCanGibEnemy(self.weapon) && random() < 0.4) {
 \t\t\t\t\t\tspawn_gibs(trace_endpos);
 \t\t\t\t\t\tSpawnBlood(trace_endpos, trace_endpos, 100);
