@@ -1,5 +1,5 @@
-/*
-	client/defs/custom.qc
+/* client/defs/custom.qc
+   ... (Lizenzkopf unverändert) ...
 */
 
 #pragma warning disable Q302
@@ -23,6 +23,7 @@ string useprint_strings[256];
 vector useprint_colors[256];
 
 float active_gamemode;
+
 float bettyprompt_time;
 
 float hud_toast_endtime;
@@ -32,7 +33,7 @@ float hud_perk_orientation;
 vector hud_round_color;
 
 float nameprint_time;
-float HUD_Change_time; 
+float HUD_Change_time;
 float hitmark_time;
 float hitmark_ignore_time;
 float hitmark_type;
@@ -47,6 +48,7 @@ float broadcast_num;
 string character_name;
 
 #define MAX_REVIVE_ICONS	16
+
 var struct revive_s {
 	float draw;
 	float timer;
@@ -69,7 +71,9 @@ float player_count;
 float score_show;
 
 #define MAX_ACHIEVEMENTS    42
-var struct achievementlist_t {
+
+var struct achievementlist_t
+{
     string      img;
     float       unlocked;
     string      name;
@@ -80,6 +84,7 @@ var struct achievementlist_t {
 float active_achievement;
 float current_achievement_page;
 float achievement_pages;
+
 float sniper_hold_breath;
 
 float K_LEFTDOWN, K_RIGHTDOWN, K_BACKDOWN, K_FORWARDDOWN;
@@ -99,68 +104,66 @@ float screenflash_worktime;
 float screenflash_starttime;
 
 .float stance;
+
 vector camang;
 
+//world text
 string chaptertitle;
 string location;
 string date;
 string person;
+
+//custom hud
 string huddir;
+
 int platform_is_web;
 
+// Stopwatch server time counter
 float stopwatch_sec;
 int stopwatch_min;
 int stopwatch_hr;
 
+// Same dealio, but for rounds
 float stopwatch_round_sec;
 int stopwatch_round_min;
 int stopwatch_round_hr;
 int stopwatch_round_isactive;
 float stopwatch_round_starttime;
 
+//
+// GamePad Input Variables
+//
 float GPButtonHeldBeginTime[24];
 float last_input_deviceid;
+
 string build_datetime;
+
 vector gun_kick;
+
 float hide_viewmodel;
 
+// csqc player prediction by eukara
 vector playerOrigin;
 vector playerOriginOld;
 vector playerVelocity;
 
-// ============================================================
-// NZP-M9 CUSTOM ADDITIONS
-// ============================================================
-
-// HUD - Damage Numbers
-float dmg_text_time;
-string dmg_text_str;
-
-// Gore-Mod Steuerung
+// ==========================================
+// M9-PATCH: Neue globale Variablen
+// ==========================================
 float gore_enabled;
 float gore_kill_light;
 float gore_blood_count;
-
-// Damage-Indicator (roter Rand bei HP-Verlust)
+float dmg_text_time;
+string dmg_text_str;
 float dmg_indicator_alpha;
 float dmg_last_health;
-
-// Screen-Shake bei Explosionen
 float screen_shake_intensity;
-
-// Hitmarker-Sound Cooldown
 float hitmarker_sound_time;
-
-// FOV-Punch beim Feuern
 float fov_punch_time;
-
-// Kill-Streak-Anzeige
 float kill_streak_count;
 float kill_streak_reset_time;
 float kill_streak_display_time;
 float kill_streak_last_time;
 string kill_streak_text;
-
-// Low-Health & Ambient
 float heartbeat_time;
 float ambient_dust_time;
