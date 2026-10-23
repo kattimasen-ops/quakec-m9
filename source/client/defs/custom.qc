@@ -1,34 +1,10 @@
 /*
 	client/defs/custom.qc
-
-	Various globals that are used in this FTEQW example are defined 
-    here, they are not used by the engine itself.
-
-	Copyright (C) 2021-2024 NZ:P Team
-
-	This program is free software; you can redistribute it and/or
-	modify it under the terms of the GNU General Public License
-	as published by the Free Software Foundation; either version 2
-	of the License, or (at your option) any later version.
-
-	This program is distributed in the hope that it will be useful,
-	but WITHOUT ANY WARRANTY; without even the implied warranty of
-	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-
-	See the GNU General Public License for more details.
-
-	You should have received a copy of the GNU General Public License
-	along with this program; if not, write to:
-
-		Free Software Foundation, Inc.
-		59 Temple Place - Suite 330
-		Boston, MA  02111-1307, USA
-
 */
 
 #pragma warning disable Q302
 
-float g_width, g_height; /* Globals for screen width and height */
+float g_width, g_height;
 
 float weapon;
 
@@ -90,7 +66,6 @@ float curweapon2frame;
 float interpolating;
 float interpolating2;
 
-
 float rounds;
 float perks;
 float rounds_change;
@@ -114,7 +89,6 @@ float achievement_pages;
 
 float sniper_hold_breath;
 
-
 float K_LEFTDOWN, K_RIGHTDOWN, K_BACKDOWN, K_FORWARDDOWN;
 
 vector TEXT_PURPLE    = [0.46, 0, 0.46];
@@ -133,36 +107,29 @@ float screenflash_starttime;
 
 .float stance;
 
-vector camang;		// used for punches
+vector camang;
 
-//world text
 string chaptertitle;
 string location;
 string date;
 string person;
 
-//custom hud
 string huddir;
 
-int 	platform_is_web;
+int platform_is_web;
 
-// Stopwatch server time counter
-float 	stopwatch_sec;
-int 	stopwatch_min;
-int 	stopwatch_hr;
+float stopwatch_sec;
+int stopwatch_min;
+int stopwatch_hr;
 
-// Same dealio, but for rounds
-float 	stopwatch_round_sec;
-int 	stopwatch_round_min;
-int 	stopwatch_round_hr;
-int 	stopwatch_round_isactive;
-float 	stopwatch_round_starttime;
+float stopwatch_round_sec;
+int stopwatch_round_min;
+int stopwatch_round_hr;
+int stopwatch_round_isactive;
+float stopwatch_round_starttime;
 
-//
-// GamePad Input Variables
-//
-float GPButtonHeldBeginTime[24];	// Tracks time button down event is called, to track holding down for different actions.
-float last_input_deviceid;			// The Device ID of the input hardware that last called CSQC_InputEvent, to target it directly.
+float GPButtonHeldBeginTime[24];
+float last_input_deviceid;
 
 string build_datetime;
 
@@ -170,7 +137,37 @@ vector gun_kick;
 
 float hide_viewmodel;
 
-// csqc player prediction by eukara
 vector playerOrigin;
 vector playerOriginOld;
 vector playerVelocity;
+
+// ============================================================
+// NZP-M9 CUSTOM ADDITIONS
+// ============================================================
+
+// HUD - Damage Numbers
+float dmg_text_time;
+string dmg_text_str;
+
+// Gore-Mod Steuerung
+float gore_enabled;
+float gore_kill_light;
+
+// Damage-Indicator (roter Rand bei HP-Verlust)
+float dmg_indicator_alpha;
+float dmg_last_health;
+
+// Screen-Shake bei Explosionen
+float screen_shake_intensity;
+
+// Hitmarker-Sound Cooldown
+float hitmarker_sound_time;
+
+// FOV-Punch beim Feuern
+float fov_punch_time;
+
+// Kill-Streak-Anzeige
+float kill_streak_count;
+float kill_streak_reset_time;
+float kill_streak_display_time;
+string kill_streak_text;
