@@ -2,30 +2,32 @@
 #pragma target fte_5768
 #pragma progs_dat "../build/fte/menu.dat"
 
+#pragma includedir "../source/client/"
+#pragma includedir "../source/shared/"
 #pragma includedir "../source/menu/"
 
 #includelist
 defs/fte.qc
 defs/menu_defs.qc
-../client/draw.qc
+draw.qc
 sui_sys.qc
 m_menu.qc
 
-menu_main.qc     // Main Menu
-menu_maps.qc     // Maps Menu
-menu_opts.qc     // Options Menu
-menu_vide.qc     // Video Menu
-menu_audi.qc     // Audio Menu
-menu_ctrl.qc     // Control Menu
-menu_gpad.qc     // Gamepad Menu
-menu_bind.qc     // Bindings Menu
-menu_aces.qc     // Accessibility Menu
-menu_cred.qc     // Credits Menu
-menu_load.qc     // Loading Screen
-menu_coop.qc     // Co-op Menu
-menu_gset.qc     // Game Settings
-menu_loby.qc     // Lobby Menu
-menu_bios.qc     // Character Bios
+menu_main.qc
+menu_maps.qc
+menu_opts.qc
+menu_vide.qc
+menu_audi.qc
+menu_ctrl.qc
+menu_gpad.qc
+menu_bind.qc
+menu_aces.qc
+menu_cred.qc
+menu_load.qc
+menu_coop.qc
+menu_gset.qc
+menu_loby.qc
+menu_bios.qc
 
 main.qc
 #endlist
