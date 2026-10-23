@@ -1,4 +1,4 @@
-name: create Custom NZP (progs.dat, menu.dat & csprogs.dat)
+name: erschaffe Custom NZP (progs.dat, menu.dat & csprogs.dat)
 
 on:
   push:
