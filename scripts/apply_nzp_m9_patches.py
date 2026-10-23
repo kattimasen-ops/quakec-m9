@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # NZP-M9 Patches: HUD, HIT/KILL, Kill-Streak, Atmosphaere/Nebel,
-# Coop-Browser-Navigation, A/B-Switch, Video-Optionen, Powerup-Runaway-Fix.
-# KEIN CSQC_Parse_Event-Patch mehr (verursachte "Bad server message").
-# Idempotent.
+# Coop-Browser-Navigation, A/B-Switch, Video-Optionen,
+# POWERUPTOAST-Fix, Powerup-Runaway-Fix.
+# Idempotent. Credits bleiben deaktiviert.
 
 import sys
 import re
@@ -17,6 +17,19 @@ def patch(path: Path, anchor: str, replacement: str, description: str, marker: s
         print(f"[OK]   {description}")
     else:
         print(f"[WARN] {description}: Anker nicht gefunden.")
+
+def patch_regex(path: Path, pattern: str, replacement: str, description: str, marker: str) -> None:
+    """Regex-basierter Patch mit Whitespace-Toleranz. Fuegt 'replacement' an der
+    Stelle ein, die 'pattern' matcht. Verwendet \\1 als Backreference."""
+    if not path.exists(): return
+    content = path.read_text(encoding="utf-8")
+    if marker in content: return
+    new_content, count = re.subn(pattern, replacement, content, count=1, flags=re.DOTALL)
+    if count >= 1:
+        path.write_text(new_content, encoding="utf-8")
+        print(f"[OK]   {description}")
+    else:
+        print(f"[WARN] {description}: Regex-Anker nicht gefunden.")
 
 def ensure_line(path: Path, line: str, description: str) -> None:
     if not path.exists(): return
@@ -64,6 +77,7 @@ ensure_line(MENU_DEFS, "float last_input_deviceid;", "Füge last_input_deviceid 
 ensure_line(MENU_DEFS, "void(float wantmode) m_toggle;", "Füge m_toggle Deklaration hinzu")
 append_safe(MENU_DEFS, "\n#ifndef MENU\nvoid() Menu_DrawMapPreview = { };\n#endif\n", "Füge menu_defs.qc Dummy hinzu", "void() Menu_DrawMapPreview = { };")
 
+# Credits bleiben deaktiviert (Kurzversion)
 if MENU_CRED.exists():
     cred_content = MENU_CRED.read_text(encoding="utf-8")
     if "Credits are currently disabled" not in cred_content:
@@ -150,7 +164,7 @@ patch(MENU_COOP,
     "D-Pad UP/DOWN to scroll servers")
 
 # ==========================================
-# TEIL 2: SUI_SYS.QC – NAVIGATION & A/B-SWITCH
+# TEIL 2: SUI_SYS.QC – NAVIGATION & A/B-SWITCH (Regex-basiert)
 # ==========================================
 SUI_FORWARD = """
 
@@ -162,54 +176,47 @@ float() Menu_Coop_Browse_EnterContainer;
 """
 append_safe(SUI_SYS, SUI_FORWARD, "SUI: Forward-Deklarationen am Dateiende", "// NZP-M9: Forward-Deklarationen für Coop-Browser-Navigation")
 
-DOWNARROW_ANCHOR = "void() _sui_menukey_downarrow = {\n\tstring current_hovered_option = _hover_actions[0];\n\tswitch(current_menu) {"
-DOWNARROW_REPLACEMENT = """void() _sui_menukey_downarrow = {
-\tstring current_hovered_option = _hover_actions[0];
-\tif (current_menu == MENU_COOPBROWSE) {
-\t\tstring nav = Menu_Coop_Browse_Navigate(current_hovered_option, 1);
-\t\tif (nav != "") { _hover_actions[0] = nav; last_hovered_id = ""; _hover_action_count = 1; return; }
-\t}
-\tswitch(current_menu) {"""
-patch(SUI_SYS, DOWNARROW_ANCHOR, DOWNARROW_REPLACEMENT,
-      "C2: Downarrow um Coop-Browser-Navigation erweitern",
+# Regex-basierter Anker: toleriert beliebigen Whitespace zwischen Funktionskopf,
+# Variablendeklaration und switch. Fuegt den Coop-Browser-Block direkt nach
+# "string current_hovered_option = _hover_actions[0];" ein.
+DOWNARROW_PATTERN = r'(void\s*\(\s*\)\s*_sui_menukey_downarrow\s*=\s*\{[\s\S]*?string\s+current_hovered_option\s*=\s*_hover_actions\s*\[\s*0\s*\]\s*;)'
+DOWNARROW_REPLACEMENT = r'''\1
+	if (current_menu == MENU_COOPBROWSE) {
+		string nav = Menu_Coop_Browse_Navigate(current_hovered_option, 1);
+		if (nav != "") { _hover_actions[0] = nav; last_hovered_id = ""; _hover_action_count = 1; return; }
+	}'''
+patch_regex(SUI_SYS, DOWNARROW_PATTERN, DOWNARROW_REPLACEMENT,
+      "C2: Downarrow um Coop-Browser-Navigation erweitern (Regex)",
       "Menu_Coop_Browse_Navigate(current_hovered_option, 1)")
 
-UPARROW_ANCHOR = "void() _sui_menukey_uparrow = {\n\tstring current_hovered_option = _hover_actions[0];\n\tswitch(current_menu) {"
-UPARROW_REPLACEMENT = """void() _sui_menukey_uparrow = {
-\tstring current_hovered_option = _hover_actions[0];
-\tif (current_menu == MENU_COOPBROWSE) {
-\t\tstring nav = Menu_Coop_Browse_Navigate(current_hovered_option, -1);
-\t\tif (nav != "") { _hover_actions[0] = nav; last_hovered_id = ""; _hover_action_count = 1; return; }
-\t}
-\tswitch(current_menu) {"""
-patch(SUI_SYS, UPARROW_ANCHOR, UPARROW_REPLACEMENT,
-      "C3: Uparrow um Coop-Browser-Navigation erweitern",
+UPARROW_PATTERN = r'(void\s*\(\s*\)\s*_sui_menukey_uparrow\s*=\s*\{[\s\S]*?string\s+current_hovered_option\s*=\s*_hover_actions\s*\[\s*0\s*\]\s*;)'
+UPARROW_REPLACEMENT = r'''\1
+	if (current_menu == MENU_COOPBROWSE) {
+		string nav = Menu_Coop_Browse_Navigate(current_hovered_option, -1);
+		if (nav != "") { _hover_actions[0] = nav; last_hovered_id = ""; _hover_action_count = 1; return; }
+	}'''
+patch_regex(SUI_SYS, UPARROW_PATTERN, UPARROW_REPLACEMENT,
+      "C3: Uparrow um Coop-Browser-Navigation erweitern (Regex)",
       "Menu_Coop_Browse_Navigate(current_hovered_option, -1)")
 
-ENTER_ANCHOR = "void() _sui_menukey_enter = {\n\tif (_hover_actions[0] == \"\")\n\t\t_sui_menukey_downarrow();\n\n\t_click_actions[0] =  _hover_actions[0];\n\t_click_action_count = 1;\n\t_last_clicked_action_count = 1;\n};"
-ENTER_REPLACEMENT = """void() _sui_menukey_enter = {
-\tif (_hover_actions[0] == "")
-\t\t_sui_menukey_downarrow();
-\tif (current_menu == MENU_COOPBROWSE && _hover_actions[0] == "cbm_serverlist") {
-\t\tif (Menu_Coop_Browse_EnterContainer()) _hover_actions[0] = "cbm_serverlistscrl0";
-\t}
-\t_click_actions[0] =  _hover_actions[0];
-\t_click_action_count = 1;
-\t_last_clicked_action_count = 1;
-};"""
-patch(SUI_SYS, ENTER_ANCHOR, ENTER_REPLACEMENT,
-      "D: Enter um Container-Enter erweitern",
+# Enter-Handler: fuegt Container-Enter-Logik hinzu
+ENTER_PATTERN = r'(void\s*\(\s*\)\s*_sui_menukey_enter\s*=\s*\{[\s\S]*?if\s*\(\s*_hover_actions\s*\[\s*0\s*\]\s*==\s*""\s*\)[\s\S]*?_sui_menukey_downarrow\s*\(\s*\)\s*;)'
+ENTER_REPLACEMENT = r'''\1
+	if (current_menu == MENU_COOPBROWSE && _hover_actions[0] == "cbm_serverlist") {
+		if (Menu_Coop_Browse_EnterContainer()) _hover_actions[0] = "cbm_serverlistscrl0";
+	}'''
+patch_regex(SUI_SYS, ENTER_PATTERN, ENTER_REPLACEMENT,
+      "D: Enter um Container-Enter erweitern (Regex)",
       "Menu_Coop_Browse_EnterContainer())")
 
-AB_ANCHOR = "float(float evtype, float scanx, float chary, float devid) sui_input_event =\n{\n\tswitch (evtype)"
-AB_REPLACEMENT = """float(float evtype, float scanx, float chary, float devid) sui_input_event =
-{
-\tif (evtype == IE_KEYDOWN || evtype == IE_KEYUP) {
-\t\tif (scanx == K_GP_A) scanx = K_ESCAPE;
-\t\telse if (scanx == K_GP_B) scanx = K_ENTER;
-\t}
-\tswitch (evtype)"""
-patch(SUI_SYS, AB_ANCHOR, AB_REPLACEMENT,
+# A/B-Swap: Regex-basiert, damit Whitespace-Variationen toleriert werden
+AB_PATTERN = r'(float\s*\(\s*float\s+evtype\s*,\s*float\s+scanx\s*,\s*float\s+chary\s*,\s*float\s+devid\s*\)\s*sui_input_event\s*=\s*\{)'
+AB_REPLACEMENT = r'''\1
+	if (evtype == IE_KEYDOWN || evtype == IE_KEYUP) {
+		if (scanx == K_GP_A) scanx = K_ESCAPE;
+		else if (scanx == K_GP_B) scanx = K_ENTER;
+	}'''
+patch_regex(SUI_SYS, AB_PATTERN, AB_REPLACEMENT,
       "FIX: A/B Button Swap (A=Zurück, B=Bestätigen)",
       "// NZP-M9: A = Zurueck")
 
@@ -340,33 +347,50 @@ patch(MAIN_QC, 'build_datetime = fgets(file);', 'build_datetime = "M9 Pro Custom
 patch(CLIENT_MAIN, "void(float apiver, string enginename, float enginever) CSQC_Init =\n{",
     """void(float apiver, string enginename, float enginever) CSQC_Init =
 {
-\t// NZP-M9 Initialisierungen
-\tgore_enabled = 1;
-\tgore_kill_light = 300;
-\tgore_blood_count = 2;
-\tdmg_text_time = 0;
-\tdmg_text_str = "";
-\tdmg_indicator_alpha = 0;
-\tdmg_last_health = 100;
-\tscreen_shake_intensity = 0;
-\thitmarker_sound_time = 0;
-\tfov_punch_time = 0;
-\tkill_streak_count = 0;
-\tkill_streak_reset_time = 0;
-\tkill_streak_display_time = 0;
-\tkill_streak_last_time = 0;
-\tkill_streak_text = "";
-\theartbeat_time = 0;
-\tambient_dust_time = 0;
-\tnzp_is_indoor = FALSE;
-\tnzp_fog_check_time = 0;
-\tnzp_last_indoor_state = FALSE;
-\tnzp_fog_initialized = FALSE;
+	// NZP-M9 Initialisierungen
+	gore_enabled = 1;
+	gore_kill_light = 300;
+	gore_blood_count = 2;
+	dmg_text_time = 0;
+	dmg_text_str = "";
+	dmg_indicator_alpha = 0;
+	dmg_last_health = 100;
+	screen_shake_intensity = 0;
+	hitmarker_sound_time = 0;
+	fov_punch_time = 0;
+	kill_streak_count = 0;
+	kill_streak_reset_time = 0;
+	kill_streak_display_time = 0;
+	kill_streak_last_time = 0;
+	kill_streak_text = "";
+	heartbeat_time = 0;
+	ambient_dust_time = 0;
+	nzp_is_indoor = FALSE;
+	nzp_fog_check_time = 0;
+	nzp_last_indoor_state = FALSE;
+	nzp_fog_initialized = FALSE;
 """,
     "Initialisiere Variablen in CSQC_Init", "// NZP-M9 Initialisierungen")
 
 # ==========================================
-# TEIL 5: ATMOSPHÄRE-FUNKTIONEN (additiv)
+# TEIL 5: CSQC_Parse_Event – POWERUPTOAST-Case hinzufügen
+# ==========================================
+# Der Server sendet beim Einsammeln eines Power-ups CSQC_EVENT_POWERUPTOAST.
+# Der Client muss den String lesen, sonst kommt es zu "Bad server message".
+# Regex-basierter Anker: fuegt nach dem BROADCASTMESSAGE-Case ein.
+PARSE_PATTERN = r'(case\s+CSQC_EVENT_BROADCASTMESSAGE\s*:\s*broadcast_type\s*=\s*readbyte\s*\(\s*\)\s*;\s*broadcast_time\s*=\s*time\s*\+\s*5\s*;\s*broadcast_num\s*=\s*readbyte\s*\(\s*\)\s*;\s*break\s*;)'
+PARSE_REPLACEMENT = r'''\1
+		case CSQC_EVENT_POWERUPTOAST:
+			hud_toast_string = readstring();
+			hud_toast_starttime = time;
+			hud_toast_endtime = time + 3;
+			break;'''
+patch_regex(CLIENT_MAIN, PARSE_PATTERN, PARSE_REPLACEMENT,
+    "CSQC_Parse_Event: POWERUPTOAST-Case hinzufügen (Fix für Bad server message)",
+    "case CSQC_EVENT_POWERUPTOAST:")
+
+# ==========================================
+# TEIL 6: ATMOSPHÄRE-FUNKTIONEN (additiv)
 # ==========================================
 ATMO_FUNCS = """
 // ==========================================
@@ -375,47 +399,47 @@ ATMO_FUNCS = """
 
 float() CSQC_IsIndoor =
 {
-\tvector start = playerOrigin + [0, 0, 16];
-\tvector end = start + [0, 0, 4096];
-\ttraceline(start, end, false, world);
+	vector start = playerOrigin + [0, 0, 16];
+	vector end = start + [0, 0, 4096];
+	traceline(start, end, false, world);
 
-\tif (trace_fraction == 1) {
-\t\treturn FALSE;
-\t}
+	if (trace_fraction == 1) {
+		return FALSE;
+	}
 
-\tif (pointcontents(trace_endpos) == CONTENT_SKY) {
-\t\treturn FALSE;
-\t}
+	if (pointcontents(trace_endpos) == CONTENT_SKY) {
+		return FALSE;
+	}
 
-\treturn TRUE;
+	return TRUE;
 };
 
 void() CSQC_UpdateAtmosphere =
 {
-\tif (time < nzp_fog_check_time) {
-\t\treturn;
-\t}
-\tnzp_fog_check_time = time + 0.5;
+	if (time < nzp_fog_check_time) {
+		return;
+	}
+	nzp_fog_check_time = time + 0.5;
 
-\tfloat indoor = CSQC_IsIndoor();
-\tnzp_is_indoor = indoor;
+	float indoor = CSQC_IsIndoor();
+	nzp_is_indoor = indoor;
 
-\tif (indoor != nzp_last_indoor_state || !nzp_fog_initialized) {
-\t\tnzp_last_indoor_state = indoor;
-\t\tnzp_fog_initialized = TRUE;
+	if (indoor != nzp_last_indoor_state || !nzp_fog_initialized) {
+		nzp_last_indoor_state = indoor;
+		nzp_fog_initialized = TRUE;
 
-\t\tif (indoor) {
-\t\t\tcvar_set("r_fog", "1");
-\t\t\tcvar_set("r_fog_color", "0.15 0.15 0.20");
-\t\t\tcvar_set("r_fog_start", "80");
-\t\t\tcvar_set("r_fog_end", "700");
-\t\t} else {
-\t\t\tcvar_set("r_fog", "1");
-\t\t\tcvar_set("r_fog_color", "0.45 0.45 0.50");
-\t\t\tcvar_set("r_fog_start", "500");
-\t\t\tcvar_set("r_fog_end", "3000");
-\t\t}
-\t}
+		if (indoor) {
+			cvar_set("r_fog", "1");
+			cvar_set("r_fog_color", "0.15 0.15 0.20");
+			cvar_set("r_fog_start", "80");
+			cvar_set("r_fog_end", "700");
+		} else {
+			cvar_set("r_fog", "1");
+			cvar_set("r_fog_color", "0.45 0.45 0.50");
+			cvar_set("r_fog_start", "500");
+			cvar_set("r_fog_end", "3000");
+		}
+	}
 };
 
 // ==========================================
@@ -426,201 +450,175 @@ patch(CLIENT_MAIN, "noref void(float width, float height, float menushown) CSQC_
     "// NZP-M9: Atmosphäre & Nebel")
 
 # ==========================================
-# TEIL 6: HUD + HIT/KILL + KILL-STREAK (additiv)
+# TEIL 7: HUD + HIT/KILL + KILL-STREAK (additiv)
 # ==========================================
-HUD_ADDITION = """\t// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
-\tCSQC_UpdateAtmosphere();
+HUD_ADDITION = """	// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
+	CSQC_UpdateAtmosphere();
 
-\t//does what you think it does
-\trenderscene();
+	//does what you think it does
+	renderscene();
 
-\t// --- NZP-M9 CUSTOM HUD ---
-\t
-\t// HIT/KILL-Text basierend auf vorhandenen Hitmarkern
-\tif (time < hitmark_time) {
-\t\tif (hitmark_type == 1) dmg_text_str = "KILL";
-\t\telse dmg_text_str = "HIT";
-\t\tdmg_text_time = time + 0.8;
-\t}
+	// --- NZP-M9 CUSTOM HUD ---
 
-\t// Kill-Streak-Logik (nur bei Kills, dedupliziert)
-\tif (hitmark_type == 1 && time < hitmark_time) {
-\t\tif (time - kill_streak_last_time > 0.5) {
-\t\t\tif (time > kill_streak_reset_time) kill_streak_count = 1;
-\t\t\telse kill_streak_count += 1;
+	// HIT/KILL-Text basierend auf vorhandenen Hitmarkern
+	if (time < hitmark_time) {
+		if (hitmark_type == 1) dmg_text_str = "KILL";
+		else dmg_text_str = "HIT";
+		dmg_text_time = time + 0.8;
+	}
 
-\t\t\tkill_streak_last_time = time;
-\t\t\tkill_streak_reset_time = time + 3.0;
+	// Kill-Streak-Logik (nur bei Kills, dedupliziert)
+	if (hitmark_type == 1 && time < hitmark_time) {
+		if (time - kill_streak_last_time > 0.5) {
+			if (time > kill_streak_reset_time) kill_streak_count = 1;
+			else kill_streak_count += 1;
 
-\t\t\tif (kill_streak_count == 2) { kill_streak_text = "DOUBLE KILL"; kill_streak_display_time = time + 2.5; }
-\t\t\telse if (kill_streak_count == 3) { kill_streak_text = "TRIPLE KILL"; kill_streak_display_time = time + 2.5; }
-\t\t\telse if (kill_streak_count >= 4) { kill_streak_text = "MULTI KILL!"; kill_streak_display_time = time + 2.5; }
-\t\t}
-\t}
+			kill_streak_last_time = time;
+			kill_streak_reset_time = time + 3.0;
 
-\tfloat current_health = getstatf(STAT_HEALTH);
-\tif (current_health < dmg_last_health) {
-\t\tdmg_indicator_alpha = 0.6;
-\t\tscreen_shake_intensity += 3;
-\t}
-\tdmg_last_health = current_health;
-\tdmg_indicator_alpha -= frametime * 2;
-\tif (dmg_indicator_alpha < 0) dmg_indicator_alpha = 0;
+			if (kill_streak_count == 2) { kill_streak_text = "DOUBLE KILL"; kill_streak_display_time = time + 2.5; }
+			else if (kill_streak_count == 3) { kill_streak_text = "TRIPLE KILL"; kill_streak_display_time = time + 2.5; }
+			else if (kill_streak_count >= 4) { kill_streak_text = "MULTI KILL!"; kill_streak_display_time = time + 2.5; }
+		}
+	}
 
-\tif (dmg_indicator_alpha > 0) {
-\t\tfloat edge_size = 20;
-\t\tdrawfill([0, 0], [g_width, edge_size], [1, 0, 0], dmg_indicator_alpha, 0);
-\t\tdrawfill([0, g_height - edge_size], [g_width, edge_size], [1, 0, 0], dmg_indicator_alpha, 0);
-\t\tdrawfill([0, edge_size], [edge_size, g_height - edge_size*2], [1, 0, 0], dmg_indicator_alpha, 0);
-\t\tdrawfill([g_width - edge_size, edge_size], [edge_size, g_height - edge_size*2], [1, 0, 0], dmg_indicator_alpha, 0);
-\t}
+	float current_health = getstatf(STAT_HEALTH);
+	if (current_health < dmg_last_health) {
+		dmg_indicator_alpha = 0.6;
+		screen_shake_intensity += 3;
+	}
+	dmg_last_health = current_health;
+	dmg_indicator_alpha -= frametime * 2;
+	if (dmg_indicator_alpha < 0) dmg_indicator_alpha = 0;
 
-\tscreen_shake_intensity -= frametime * 25;
-\tif (screen_shake_intensity < 0) screen_shake_intensity = 0;
+	if (dmg_indicator_alpha > 0) {
+		float edge_size = 20;
+		drawfill([0, 0], [g_width, edge_size], [1, 0, 0], dmg_indicator_alpha, 0);
+		drawfill([0, g_height - edge_size], [g_width, edge_size], [1, 0, 0], dmg_indicator_alpha, 0);
+		drawfill([0, edge_size], [edge_size, g_height - edge_size*2], [1, 0, 0], dmg_indicator_alpha, 0);
+		drawfill([g_width - edge_size, edge_size], [edge_size, g_height - edge_size*2], [1, 0, 0], dmg_indicator_alpha, 0);
+	}
 
-\tif (current_health < 30 && !(getstatf(STAT_PERKS) & P_DEAD) && !getstatf(STAT_WEAPONZOOM)) {
-\t\tfloat pulse = (sin(cltime * 8) + 1) * 0.5;
-\t\tdrawfill([0, 0], [g_width, g_height], [1, 0, 0], pulse * 0.4, 0);
-\t\tif (time > heartbeat_time) {
-\t\t\tlocalsound_enhanced("sounds/player/heart.wav", 0, 1.0);
-\t\t\theartbeat_time = time + 1.0;
-\t\t}
-\t}
+	screen_shake_intensity -= frametime * 25;
+	if (screen_shake_intensity < 0) screen_shake_intensity = 0;
 
-\t// Ambient Dust (nur im Außenbereich)
-\tif (!nzp_last_indoor_state && time > ambient_dust_time && cvar("nzp_particles")) {
-\t\tambient_dust_time = time + 0.1;
-\t\tvector view_ang = getviewprop(VF_ANGLES);
-\t\tmakevectors(view_ang);
-\t\tvector dust_pos = getviewprop(VF_ORIGIN) + v_forward * 200 + v_right * (random()*400-200) + v_up * (random()*400-200);
-\t\tpointparticles(particleeffectnum("weapons.impact"), dust_pos, '0 0 0', 1);
-\t}
+	if (current_health < 30 && !(getstatf(STAT_PERKS) & P_DEAD) && !getstatf(STAT_WEAPONZOOM)) {
+		float pulse = (sin(cltime * 8) + 1) * 0.5;
+		drawfill([0, 0], [g_width, g_height], [1, 0, 0], pulse * 0.4, 0);
+		if (time > heartbeat_time) {
+			localsound_enhanced("sounds/player/heart.wav", 0, 1.0);
+			heartbeat_time = time + 1.0;
+		}
+	}
 
-\tif (!getstatf(STAT_WEAPONZOOM) && !cvar("chase_active")) {
-\t\tfloat spread = 4.0 + vlen(playerVelocity) * 0.05 + fabs(gun_kick[0]) * 2.0;
-\t\tvector cx_color = [0.8, 0.2, 1];
-\t\tif (current_health < 30) cx_color = [1, 0, 0];
+	// Ambient Dust (nur im Außenbereich)
+	if (!nzp_last_indoor_state && time > ambient_dust_time && cvar("nzp_particles")) {
+		ambient_dust_time = time + 0.1;
+		vector view_ang = getviewprop(VF_ANGLES);
+		makevectors(view_ang);
+		vector dust_pos = getviewprop(VF_ORIGIN) + v_forward * 200 + v_right * (random()*400-200) + v_up * (random()*400-200);
+		pointparticles(particleeffectnum("weapons.impact"), dust_pos, '0 0 0', 1);
+	}
 
-\t\tdrawfill([g_width*0.5 - 1, g_height*0.5 - spread - 6], [2, 6], cx_color, 1, 0);
-\t\tdrawfill([g_width*0.5 - 1, g_height*0.5 + spread], [2, 6], cx_color, 1, 0);
-\t\tdrawfill([g_width*0.5 - spread - 6, g_height*0.5 - 1], [6, 2], cx_color, 1, 0);
-\t\tdrawfill([g_width*0.5 + spread, g_height*0.5 - 1], [6, 2], cx_color, 1, 0);
-\t\tdrawfill([g_width*0.5 - 1, g_height*0.5 - 1], [2, 2], cx_color, 0.5, 0);
-\t}
+	if (!getstatf(STAT_WEAPONZOOM) && !cvar("chase_active")) {
+		float spread = 4.0 + vlen(playerVelocity) * 0.05 + fabs(gun_kick[0]) * 2.0;
+		vector cx_color = [0.8, 0.2, 1];
+		if (current_health < 30) cx_color = [1, 0, 0];
 
-\tif (serverkey("pausestate") != "1") {
-\t\tsui_begin(g_width, g_height);
-\t\tsui_set_align([SUI_ALIGN_END, SUI_ALIGN_START]);
+		drawfill([g_width*0.5 - 1, g_height*0.5 - spread - 6], [2, 6], cx_color, 1, 0);
+		drawfill([g_width*0.5 - 1, g_height*0.5 + spread], [2, 6], cx_color, 1, 0);
+		drawfill([g_width*0.5 - spread - 6, g_height*0.5 - 1], [6, 2], cx_color, 1, 0);
+		drawfill([g_width*0.5 + spread, g_height*0.5 - 1], [6, 2], cx_color, 1, 0);
+		drawfill([g_width*0.5 - 1, g_height*0.5 - 1], [2, 2], cx_color, 0.5, 0);
+	}
 
-\t\tfloat real_kills = 0;
-\t\tentity player_ent = find(world, classname, "player");
-\t\twhile (player_ent != world) {
-\t\t\tif (player_ent.playernum == player_localnum + 1) {
-\t\t\t\treal_kills = player_ent.kills;
-\t\t\t\tbreak;
-\t\t\t}
-\t\t\tplayer_ent = find(player_ent, classname, "player");
-\t\t}
+	if (serverkey("pausestate") != "1") {
+		sui_begin(g_width, g_height);
+		sui_set_align([SUI_ALIGN_END, SUI_ALIGN_START]);
 
-\t\tsui_text([-10, 10], MENU_TEXT_MEDIUM, sprintf("KILLS: %d", real_kills), [0.8, 0.2, 1], 1, 0);
+		float real_kills = 0;
+		entity player_ent = find(world, classname, "player");
+		while (player_ent != world) {
+			if (player_ent.playernum == player_localnum + 1) {
+				real_kills = player_ent.kills;
+				break;
+			}
+			player_ent = find(player_ent, classname, "player");
+		}
 
-\t\tfloat mins = floor(cltime / 60);
-\t\tfloat secs = floor(cltime % 60);
-\t\tsui_text([-10, 30], MENU_TEXT_SMALL, sprintf("TIME: %02d:%02d", mins, secs), [1, 1, 1], 1, 0);
+		sui_text([-10, 10], MENU_TEXT_MEDIUM, sprintf("KILLS: %d", real_kills), [0.8, 0.2, 1], 1, 0);
 
-\t\tif (time < dmg_text_time) {
-\t\t\tfloat diff = dmg_text_time - time;
-\t\t\tfloat offset_y = 60 - ((0.8 - diff) * 40);
-\t\t\tvector dmg_color = [1, 0.2, 1];
-\t\t\tif (dmg_text_str == "KILL") dmg_color = [1, 0, 0];
-\t\t\tsui_set_align([SUI_ALIGN_CENTER, SUI_ALIGN_CENTER]);
-\t\t\tsui_text([0, -offset_y], MENU_TEXT_MEDIUM, dmg_text_str, dmg_color, diff, 0);
-\t\t}
+		float mins = floor(cltime / 60);
+		float secs = floor(cltime % 60);
+		sui_text([-10, 30], MENU_TEXT_SMALL, sprintf("TIME: %02d:%02d", mins, secs), [1, 1, 1], 1, 0);
 
-\t\tif (time < kill_streak_display_time) {
-\t\t\tsui_set_align([SUI_ALIGN_CENTER, SUI_ALIGN_CENTER]);
-\t\t\tsui_text([0, -120], MENU_TEXT_LARGE, kill_streak_text, [1, 0.5, 0], 1, 0);
-\t\t}
-\t\tsui_end();
-\t}"""
+		if (time < dmg_text_time) {
+			float diff = dmg_text_time - time;
+			float offset_y = 60 - ((0.8 - diff) * 40);
+			vector dmg_color = [1, 0.2, 1];
+			if (dmg_text_str == "KILL") dmg_color = [1, 0, 0];
+			sui_set_align([SUI_ALIGN_CENTER, SUI_ALIGN_CENTER]);
+			sui_text([0, -offset_y], MENU_TEXT_MEDIUM, dmg_text_str, dmg_color, diff, 0);
+		}
+
+		if (time < kill_streak_display_time) {
+			sui_set_align([SUI_ALIGN_CENTER, SUI_ALIGN_CENTER]);
+			sui_text([0, -120], MENU_TEXT_LARGE, kill_streak_text, [1, 0.5, 0], 1, 0);
+		}
+
+		// Power-Up Toast (Fix für POWERUPTOAST)
+		if (time < hud_toast_endtime && hud_toast_string != "") {
+			float toast_alpha = 1;
+			if (hud_toast_endtime - time < 1) toast_alpha = hud_toast_endtime - time;
+			sui_set_align([SUI_ALIGN_CENTER, SUI_ALIGN_START]);
+			sui_text([0, 80], MENU_TEXT_MEDIUM, hud_toast_string, [1, 1, 0.5], toast_alpha, 0);
+		}
+
+		sui_end();
+	}"""
 
 patch(CLIENT_MAIN, "\t//does what you think it does\n\trenderscene();",
     HUD_ADDITION,
-    "HUD-Block inkl. HIT/KILL + Kill-Streak nach renderscene() einfügen",
+    "HUD-Block inkl. HIT/KILL + Kill-Streak + Toast nach renderscene() einfügen",
     "--- NZP-M9 CUSTOM HUD ---")
 
 # ==========================================
-# TEIL 7: POWERUPS.QC – RUNaway-LOOP-FIX (deterministisch)
+# TEIL 8: POWERUPS.QC – RUNAWAY-LOOP-FIX
 # ==========================================
-RUNAWAY_ANCHOR = """float perk_to_give = 0;
-	float found_perk_for_player = false;
-	while(!found_perk_for_player) {
-		float perk_rand = random();
-		if (perk_rand < (1/8) && (perks_can_give & P_REVIVE)) {
-			self.sequence = 1;
-			perk_to_give = P_REVIVE;
-		} else if (perk_rand < (2/8) && (perks_can_give & P_JUG)) {
-			self.sequence = 2;
-			perk_to_give = P_JUG;
-		} else if (perk_rand < (3/8) && (perks_can_give & P_SPEED)) {
-			self.sequence = 3;
-			perk_to_give = P_SPEED;
-		} else if (perk_rand < (4/8) && (perks_can_give & P_DOUBLE)) {
-			self.has_doubletap_damage_buff = true;
-			self.sequence = 4;
-			perk_to_give = P_DOUBLE;
-		} else if (perk_rand < (5/8) && (perks_can_give & P_STAMIN)) {
-			self.sequence = 5;
-			perk_to_give = P_STAMIN;
-		} else if (perk_rand < (6/8) && (perks_can_give & P_FLOP)) {
-			self.sequence = 6;
-			perk_to_give = P_FLOP;
-		} else if (perk_rand < (7/8) && (perks_can_give & P_DEAD)) {
-			self.sequence = 7;
-			perk_to_give = P_DEAD;
-		} else if ((perks_can_give & P_MULE)) {
-			self.sequence = 8;
-			perk_to_give = P_MULE;
-		}
-		if (perk_to_give != 0) found_perk_for_player = true;
-	}"""
+RUNAWAY_PATTERN = r'(float\s+perk_to_give\s*=\s*0;\s*float\s+found_perk_for_player\s*=\s*false;\s*)while\s*\(\s*!\s*found_perk_for_player\s*\)\s*\{[\s\S]*?if\s*\(\s*perk_to_give\s*!=\s*0\s*\)\s*found_perk_for_player\s*=\s*true;\s*\}'
 
 RUNAWAY_REPLACEMENT = """float perk_to_give = 0;
 
-	// NZP-M9 FIX: Deterministische Perk-Auswahl ohne while-Schleife.
-	// Verhindert runaway loop error, wenn random() keinen gueltigen Perk trifft.
-	float perk_roll = random() * 8;
-	float perk_index = floor(perk_roll);
-	if (perk_index >= 8) perk_index = 7;
+		// NZP-M9 FIX: Deterministische, uniforme Auswahl aus den verfuegbaren
+		// Perks. Die frueher verwendete while-Schleife konnte endlos laufen
+		// ("runaway loop error"). perks_can_give ist hier garantiert > 0.
+		float num_avail = 0;
+		if (perks_can_give & P_REVIVE) num_avail++;
+		if (perks_can_give & P_JUG) num_avail++;
+		if (perks_can_give & P_SPEED) num_avail++;
+		if (perks_can_give & P_DOUBLE) num_avail++;
+		if (perks_can_give & P_STAMIN) num_avail++;
+		if (perks_can_give & P_FLOP) num_avail++;
+		if (perks_can_give & P_DEAD) num_avail++;
+		if (perks_can_give & P_MULE) num_avail++;
 
-	if (perk_index == 0 && (perks_can_give & P_REVIVE)) {
-		self.sequence = 1; perk_to_give = P_REVIVE;
-	} else if (perk_index == 1 && (perks_can_give & P_JUG)) {
-		self.sequence = 2; perk_to_give = P_JUG;
-	} else if (perk_index == 2 && (perks_can_give & P_SPEED)) {
-		self.sequence = 3; perk_to_give = P_SPEED;
-	} else if (perk_index == 3 && (perks_can_give & P_DOUBLE)) {
-		self.has_doubletap_damage_buff = true; self.sequence = 4; perk_to_give = P_DOUBLE;
-	} else if (perk_index == 4 && (perks_can_give & P_STAMIN)) {
-		self.sequence = 5; perk_to_give = P_STAMIN;
-	} else if (perk_index == 5 && (perks_can_give & P_FLOP)) {
-		self.sequence = 6; perk_to_give = P_FLOP;
-	} else if (perk_index == 6 && (perks_can_give & P_DEAD)) {
-		self.sequence = 7; perk_to_give = P_DEAD;
-	} else if (perk_index == 7 && (perks_can_give & P_MULE)) {
-		self.sequence = 8; perk_to_give = P_MULE;
-	}
+		float pick = floor(random() * num_avail);
+		if (pick >= num_avail) pick = num_avail - 1;
 
-	// Fallback: Kein Perk gefunden -> Punkte vergeben.
-	if (perk_to_give == 0) {
-		Player_AddScore(players, game_modifiers.gameplay.powerups.powerup_free_perk.awarded_score_if_no_perk_obtained, true);
-		players = find(players, classname, "player");
-		continue;
-	}"""
+		float current = 0;
 
-patch(POWERUPS_QC, RUNAWAY_ANCHOR, RUNAWAY_REPLACEMENT,
-      "Powerups: Runaway-Loop deterministisch beheben",
-      "NZP-M9 FIX: Deterministische Perk-Auswahl ohne while-Schleife")
+		if (perks_can_give & P_REVIVE) { if (current == pick) { self.sequence = 1; perk_to_give = P_REVIVE; } current++; }
+		if (perks_can_give & P_JUG)    { if (current == pick) { self.sequence = 2; perk_to_give = P_JUG; }    current++; }
+		if (perks_can_give & P_SPEED)  { if (current == pick) { self.sequence = 3; perk_to_give = P_SPEED; }  current++; }
+		if (perks_can_give & P_DOUBLE) { if (current == pick) { self.has_doubletap_damage_buff = true; self.sequence = 4; perk_to_give = P_DOUBLE; } current++; }
+		if (perks_can_give & P_STAMIN) { if (current == pick) { self.sequence = 5; perk_to_give = P_STAMIN; } current++; }
+		if (perks_can_give & P_FLOP)   { if (current == pick) { self.sequence = 6; perk_to_give = P_FLOP; }   current++; }
+		if (perks_can_give & P_DEAD)   { if (current == pick) { self.sequence = 7; perk_to_give = P_DEAD; }   current++; }
+		if (perks_can_give & P_MULE)   { if (current == pick) { self.sequence = 8; perk_to_give = P_MULE; }   current++; }"""
+
+patch_regex(POWERUPS_QC, RUNAWAY_PATTERN, RUNAWAY_REPLACEMENT,
+    "Powerups: Runaway-Loop deterministisch beheben (Regex)",
+    "NZP-M9 FIX: Deterministische")
 
 print("\n=== Alle Patches erfolgreich angewendet (idempotent). ===")
 sys.exit(0)
