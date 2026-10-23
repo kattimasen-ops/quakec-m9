@@ -55,7 +55,7 @@ def write_qc_file(csv_data):
                 output.write('float ')
 
             output.write(f'{fields.name};\n')
-        
+
         # Close the struct.
         output.write('}')
 
@@ -70,10 +70,12 @@ def write_qc_file(csv_data):
             output.write('{')
             entry_counter = 0
             for entry in value:
-                if struct_fields[entry_counter].item_type != ITYPE_STRING:
-                    output.write(f'{str(entry)},')
+                if struct_fields[entry_counter].item_type == ITYPE_STRING:
+                    # NZP-M9 FIX: Robustes Escaping für QuakeC-Strings.
+                    safe = str(entry).replace('\\', '\\\\').replace('"', '\\"').replace('\n', ' ').replace('\r', '')
+                    output.write(f'"{safe}",')
                 else:
-                    output.write(f'\"{entry}\",')
+                    output.write(f'{entry},')
                 entry_counter += 1
 
             # Write the length of the first entry
@@ -84,8 +86,9 @@ def write_qc_file(csv_data):
             if value_counter + 1 < len(csv_data.values):
                 output.write(',')
 
-            # Leave comment referring to the unhashed-value
-            output.write(f' // {original_names[value_counter]}')
+            # NZP-M9 FIX: Kommentar auf 100 Zeichen begrenzen, Zeilenumbrüche entfernen.
+            safe_comment = str(original_names[value_counter]).replace('\n', ' ').replace('\r', '')[:100]
+            output.write(f' // {safe_comment}')
 
             output.write('\n')
 
@@ -135,11 +138,18 @@ def read_csv_data():
     global original_lengths, original_names
     csv_data = pandas.read_csv(args['input_file'])
 
-    # Grab every value and turn the first entry into a hash.
+    # Grab every value before we overwrite column 0
     for value in csv_data.values:
-        original_lengths.append(len(value[0]))
-        original_names.append(value[0])
-        value[0] = int(crc16.ibm_3740(str.encode(value[0])))
+        original_lengths.append(len(str(value[0])))
+        original_names.append(str(value[0]))
+
+    # NZP-M9 FIX: 'for value in csv_data.values' iteriert über KOPIEN.
+    # Frühere Versionen haben die CRC-Hashes nie in die DataFrame geschrieben,
+    # was QuakeC-Syntaxfehler bei Zeilen wie 'misc/buy.wav' ausgelöst hat.
+    # Direkte Zuweisung per iloc behebt das.
+    for i in range(len(csv_data)):
+        original_value = csv_data.iloc[i, 0]
+        csv_data.iloc[i, 0] = int(crc16.ibm_3740(str.encode(str(original_value))))
 
     # Now order everything by ascending order
     csv_data = csv_data.sort_values(csv_data.columns[0])
