@@ -1,4 +1,4 @@
-name: Bastel Custom NZP csprogs.dat (Fast)
+name: klopp Custom NZP csprogs.dat (Fast)
 
 on:
   push:
@@ -10,34 +10,50 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Repository auschecken
       - name: Checkout your fork
         uses: actions/checkout@v4
 
+      # 2. Python-Abhängigkeiten für den Hash-Generator installieren
       - name: Install Python Dependencies
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install pandas fastcrc colorama
 
+      # 3. Patches anwenden (Menü- und Performance-Fixes)
       - name: Apply Patches
         run: |
           python3 scripts/apply_nzp_m9_patches.py
 
+      # 4. Direkt kompilieren (ohne Docker, extrem schnell)
       - name: Compile CSQC
         run: |
+          # Ausführrechte sicherstellen
           chmod +x bin/fteqcc-cli-lin
           
           echo "=== Generiere Hash-Tabelle ==="
           python3 bin/qc_hash_generator.py -i tools/asset_conversion_table.csv -o source/server/hash_table.qc
           
           echo "=== Kompiliere CSQC (Manuell) ==="
-          bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/csqc.src -o csprogs.dat
+          bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/csqc.src
           
-          echo "=== Erzeugte .dat-Dateien im Workspace ==="
-          find . -name "*.dat" -ls
+          echo "=== Suche erzeugte csprogs.dat ==="
+          FOUND=$(find . -name "csprogs.dat" -not -path "./bin/*" -not -path "./.git/*" | head -1)
+          if [ -z "$FOUND" ]; then
+            echo "FEHLER: Keine csprogs.dat gefunden!"
+            find . -name "*.dat"
+            exit 1
+          fi
+          echo "Gefunden: $FOUND"
+          cp "$FOUND" ./csprogs.dat
+          
+          echo "=== Größe der fertigen Datei ==="
+          ls -la csprogs.dat
 
-      - name: Upload Dat Files
+      # 5. Die fertige csprogs.dat hochladen
+      - name: Upload csprogs.dat
         uses: actions/upload-artifact@v4
         with:
           name: nzp-csprogs-patched
-          path: "**/*.dat"
+          path: csprogs.dat
           if-no-files-found: error
