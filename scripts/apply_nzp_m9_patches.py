@@ -67,6 +67,7 @@ MENU_VIDE = BASE / "menu_vide.qc"
 CLIENT_MAIN = CLIENT / "main.qc"
 FTE_QC = CLIENT / "defs/fte.qc"
 MENU_DEFS = BASE / "defs/menu_defs.qc"
+MENU_CRED = BASE / "menu_cred.qc"
 
 # ==========================================
 # TEIL 0: FEHLENDE DEKLARATIONEN & BUILTINS
@@ -91,6 +92,22 @@ patch(
     marker="// float menu_active;",
     required=False,
 )
+
+# --- KRITISCHER FIX: Credits-Menü überschreiben, um Freeze zu verhindern ---
+cred_safe = """
+void() Menu_Credits =
+{
+    Menu_DrawBackground();
+    Menu_DrawTitle("CREDITS");
+    Menu_DrawMapPanel();
+    sui_text([150, 100], MENU_TEXT_MEDIUM, "Credits are currently disabled in this build.", [1, 1, 1], 1, 0);
+    Menu_Button(-1, "cr_back", "BACK", "Return to Main Menu.") ? current_menu = MENU_MAIN : 0;
+    sui_pop_frame();
+};
+"""
+# Wir überschreiben die Datei komplett, um Endlosschleifen der Original-Datei zu vermeiden
+MENU_CRED.write_text(cred_safe, encoding="utf-8")
+print("[OK]   menu_cred.qc durch sichere Version ersetzt (verhindert Freeze)")
 
 # ==========================================
 # TEIL 1: SERVER-BROWSER GAMEPAD NAVIGATION
