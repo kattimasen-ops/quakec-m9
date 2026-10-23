@@ -73,7 +73,6 @@ MENU_CRED = BASE / "menu_cred.qc"
 # TEIL 0: FEHLENDE DEKLARATIONEN & BUILTINS
 # ==========================================
 
-# 1. Aufräumen: Entferne den alten, fehlerhaften Dummy aus der menu_defs.qc
 if MENU_DEFS.exists():
     content = MENU_DEFS.read_text(encoding="utf-8")
     content = content.replace("void() Menu_DrawMapPreview = { };", "")
@@ -82,17 +81,14 @@ if MENU_DEFS.exists():
     content = content.replace("// --- NZP-M9 Forward Declarations & Missing Variables ---", "")
     content = content.replace("// -----------------------------------------------------", "")
     MENU_DEFS.write_text(content, encoding="utf-8")
-    print("[OK]   Alte Dummy-Einträge aus menu_defs.qc bereinigt")
 
 ensure_line(FTE_QC, ".float is_in_menu;", "Füge is_in_menu Feld hinzu")
 ensure_line(FTE_QC, "void(string soundname, float channel, float volume) localsound_enhanced = { localsound(soundname, channel, volume); };", "Füge localsound_enhanced Wrapper hinzu")
 ensure_line(FTE_QC, "void(float dest) setkeydest = #602;", "Füge setkeydest Builtin hinzu")
 
-# 2. Wichtige globale Variablen (für beide Menüs)
 ensure_line(MENU_DEFS, "float last_input_deviceid;", "Füge last_input_deviceid hinzu")
 ensure_line(MENU_DEFS, "void(float wantmode) m_toggle;", "Füge m_toggle Deklaration hinzu")
 
-# 3. Dummy NUR für csprogs.dat (ohne MENU)
 menu_defs_injection = """
 #ifndef MENU
 // --- NZP-M9 Dummy für fehlende m_menu.qc Funktion ---
@@ -111,7 +107,6 @@ patch(
     required=False,
 )
 
-# --- KRITISCHER FIX: Credits-Menü überschreiben, um Freeze zu verhindern ---
 cred_safe = """
 void() Menu_Credits =
 {
@@ -124,7 +119,7 @@ void() Menu_Credits =
 };
 """
 MENU_CRED.write_text(cred_safe, encoding="utf-8")
-print("[OK]   menu_cred.qc durch sichere Version ersetzt (verhindert Freeze)")
+print("[OK]   menu_cred.qc durch sichere Version ersetzt")
 
 # ==========================================
 # TEIL 1: SERVER-BROWSER GAMEPAD NAVIGATION
@@ -306,71 +301,85 @@ patch(
 )
 
 # ==========================================
-# TEIL 2: VIDEO-MENÜ OPTIMIERUNGEN
+# TEIL 2: VIDEO-MENÜ OPTIMIERUNGEN (inkl. neuer Optionen)
 # ==========================================
 
+# 1. Button-Array erweitern (13 -> 15)
 patch(
     MENU_VIDE,
-    anchor='string menu_video_buttons[12] = {"vm_resol", "vm_fulls", "vm_shfps", "vm_maxps", "vm_vsync", "vm_fov", "vm_gamma", "vm_uwide", "vm_parts", "vm_filtr", "vm_apply", "vm_back"};',
-    replacement='string menu_video_buttons[13] = {"vm_resol", "vm_fulls", "vm_shfps", "vm_maxps", "vm_vsync", "vm_fov", "vm_gamma", "vm_uwide", "vm_parts", "vm_decal", "vm_filtr", "vm_apply", "vm_back"};',
-    description="E1: Button-Array um Decals erweitern",
-    marker='"vm_decal", "vm_filtr"',
+    anchor='string menu_video_buttons[13] = {"vm_resol", "vm_fulls", "vm_shfps", "vm_maxps", "vm_vsync", "vm_fov", "vm_gamma", "vm_uwide", "vm_parts", "vm_decal", "vm_filtr", "vm_apply", "vm_back"};',
+    replacement='string menu_video_buttons[15] = {"vm_resol", "vm_fulls", "vm_shfps", "vm_maxps", "vm_vsync", "vm_fov", "vm_gamma", "vm_uwide", "vm_parts", "vm_decal", "vm_dynlgt", "vm_shdw", "vm_filtr", "vm_apply", "vm_back"};',
+    description="E1: Button-Array um Dynamic Lights & Shadows erweitern",
+    marker='"vm_dynlgt", "vm_shdw"',
 )
 
+# 2. Variablen hinzufügen
 patch(
     MENU_VIDE,
-    anchor='float current_particles;\nfloat current_filter;',
-    replacement='float current_particles;\nfloat current_decals;\nfloat current_filter;',
-    description="E2: current_decals Variable",
-    marker='float current_decals;',
+    anchor='float current_particles;\nfloat current_decals;\nfloat current_filter;',
+    replacement='float current_particles;\nfloat current_decals;\nfloat current_dynlight;\nfloat current_shadows;\nfloat current_filter;',
+    description="E2: current_dynlight & current_shadows Variablen",
+    marker='float current_dynlight;',
 )
 
+# 3. Werte beim Öffnen des Menüs auslesen
 patch(
     MENU_VIDE,
-    anchor='current_particles = cvar("nzp_particles");\n    current_filter =',
-    replacement='current_particles = cvar("nzp_particles");\n    current_decals = cvar("nzp_decals");\n    current_filter =',
-    description="E3: Decals-Wert auslesen",
-    marker='current_decals = cvar("nzp_decals");',
+    anchor='current_particles = cvar("nzp_particles");\n    current_decals = cvar("nzp_decals");\n    current_filter =',
+    replacement='current_particles = cvar("nzp_particles");\n    current_decals = cvar("nzp_decals");\n    current_dynlight = cvar("r_dynamic");\n    current_shadows = cvar("r_shadows");\n    current_filter =',
+    description="E3: Dynamic Lights & Shadows auslesen",
+    marker='current_dynlight = cvar("r_dynamic");',
 )
 
+# 4. Toggle-Funktionen
 patch(
     MENU_VIDE,
     anchor='void() Menu_Video_UpdateUltrawide =',
-    replacement='void() Menu_Video_UpdateDecals =\n{\n    Menu_PlaySound(MENU_SND_ENTER);\n    current_decals = !current_decals;\n    cvar_set("nzp_decals", ftos(current_decals));\n};\n\nvoid() Menu_Video_UpdateUltrawide =',
-    description="E4: Funktion Menu_Video_UpdateDecals",
-    marker='Menu_Video_UpdateDecals',
+    replacement='''void() Menu_Video_UpdateDynLight =
+{
+    Menu_PlaySound(MENU_SND_ENTER);
+    current_dynlight = !current_dynlight;
+    cvar_set("r_dynamic", ftos(current_dynlight));
+};
+
+void() Menu_Video_UpdateShadows =
+{
+    Menu_PlaySound(MENU_SND_ENTER);
+    current_shadows = !current_shadows;
+    cvar_set("r_shadows", ftos(current_shadows));
+};
+
+void() Menu_Video_UpdateUltrawide =''',
+    description="E4: Funktionen für Dynamic Lights & Shadows",
+    marker='Menu_Video_UpdateDynLight',
 )
 
+# 5. UI-Code anpassen (Indizes verschieben)
 patch(
     MENU_VIDE,
-    anchor='// Max FPS\n    if (cvar("vid_vsync") == 0) {\n        Menu_Button(4, "vm_maxps", "MAX FPS", "Configure Maximum FPS Value.") ? 0 : 0;\n        Menu_CvarSlider(4, "vm_maxps", [10, 500, 490], "cl_maxfps", true, false, false);\n    } else {\n        Menu_GreyButton(4, "[VSYNC ON] MAX FPS");\n    }',
-    replacement='// Max FPS\n    Menu_Button(4, "vm_maxps", "MAX FPS", "Configure Maximum FPS Value.") ? 0 : 0;\n    Menu_CvarSlider(4, "vm_maxps", [10, 500, 490], "cl_maxfps", true, false, false);',
-    description="E5: Max FPS nicht mehr durch VSync blockieren",
-    marker='Menu_CvarSlider(4, "vm_maxps", [10, 500, 490]',
-)
+    anchor='// Texture Filtering\n    Menu_Button(11, "vm_filtr", "TEXTURE FILTERING", "Choose 3D Environment Filtering Mode.") ? Menu_Video_UpdateFiltering() : 0;\n    string filt_string = "";\n    if (current_filter) filt_string = "NEAREST";\n    else filt_string = "LINEAR";\n    Menu_DrawOptionValue(11, filt_string);',
+    replacement='''// Dynamic Lights
+    Menu_Button(11, "vm_dynlgt", "DYNAMIC LIGHTS", "Toggle Realtime Lights (Huge Performance Boost).") ? Menu_Video_UpdateDynLight() : 0;
+    string dynlgt_string = "";
+    if (current_dynlight) dynlgt_string = "ENABLED";
+    else dynlgt_string = "DISABLED";
+    Menu_DrawOptionValue(11, dynlgt_string);
 
-patch(
-    MENU_VIDE,
-    anchor='if (cvar("vid_vsync") && ret == "vm_maxps")\n        ret = "vm_vsync";\n\n    return ret;',
-    replacement='return ret;',
-    description="E6: VSync-Navigations-Fix (Next)",
-    marker='// Nav fix next',
-)
+    // Shadows
+    Menu_Button(12, "vm_shdw", "SHADOWS", "Toggle Entity Shadows (Improves Performance).") ? Menu_Video_UpdateShadows() : 0;
+    string shadows_string = "";
+    if (current_shadows) shadows_string = "ENABLED";
+    else shadows_string = "DISABLED";
+    Menu_DrawOptionValue(12, shadows_string);
 
-patch(
-    MENU_VIDE,
-    anchor='if (cvar("vid_vsync") && ret == "vm_maxps")\n        ret = "vm_shfps";\n\n    return ret;',
-    replacement='return ret;',
-    description="E7: VSync-Navigations-Fix (Prev)",
-    marker='// Nav fix prev',
-)
-
-patch(
-    MENU_VIDE,
-    anchor='// Texture Filtering\n    Menu_Button(10, "vm_filtr", "TEXTURE FILTERING", "Choose 3D Environment Filtering Mode.") ? Menu_Video_UpdateFiltering() : 0;\n    string filt_string = "";\n    if (current_filter) filt_string = "NEAREST";\n    else filt_string = "LINEAR";\n    Menu_DrawOptionValue(10, filt_string);',
-    replacement='// Decals\n    Menu_Button(10, "vm_decal", "DECALS", "Toggle Bullet Holes and Blood (Saves Performance).") ? Menu_Video_UpdateDecals() : 0;\n    string decal_string = "";\n    if (current_decals) decal_string = "ENABLED";\n    else decal_string = "DISABLED";\n    Menu_DrawOptionValue(10, decal_string);\n\n    // Texture Filtering\n    Menu_Button(11, "vm_filtr", "TEXTURE FILTERING", "Choose 3D Environment Filtering Mode.") ? Menu_Video_UpdateFiltering() : 0;\n    string filt_string = "";\n    if (current_filter) filt_string = "NEAREST";\n    else filt_string = "LINEAR";\n    Menu_DrawOptionValue(11, filt_string);',
-    description="E8: Decals-Button ins Menü einfügen",
-    marker='Menu_Button(10, "vm_decal"',
+    // Texture Filtering
+    Menu_Button(13, "vm_filtr", "TEXTURE FILTERING", "Choose 3D Environment Filtering Mode.") ? Menu_Video_UpdateFiltering() : 0;
+    string filt_string = "";
+    if (current_filter) filt_string = "NEAREST";
+    else filt_string = "LINEAR";
+    Menu_DrawOptionValue(13, filt_string);''',
+    description="E5: UI-Code für Dynamic Lights & Shadows einfügen",
+    marker='vm_dynlgt", "DYNAMIC LIGHTS',
 )
 
 print("\n=== Alle Patches erfolgreich angewendet. ===")
