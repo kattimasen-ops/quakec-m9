@@ -1,4 +1,4 @@
-name: Buildinhe Custom NZP (qwprogs, menu & csprogs)
+name: kreiere Custom NZP (menu & csprogs)
 
 on:
   push:
@@ -10,52 +10,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Engine-Repo auschecken
-      - name: Checkout nzp-team/fteqw
-        uses: actions/checkout@v4
-        with:
-          repository: nzp-team/fteqw
-          ref: master
-          path: fteqw
-
-      # 2. Dein QuakeC-Repo auschecken
       - name: Checkout your fork
         uses: actions/checkout@v4
-        with:
-          path: quakec-m9
 
-      # 3. Passenden Compiler (fteqcc) bauen
-      - name: Build matching FTEQCC
-        run: |
-          cd fteqw/engine
-          make qcc-rel -j$(nproc)
-          # Compiler ins QuakeC-Verzeichnis kopieren
-          cp release/fteqcc ../../quakec-m9/bin/fteqcc-cli-lin
-          chmod +x ../../quakec-m9/bin/fteqcc-cli-lin
-
-      # 4. Python-Abhängigkeiten installieren
       - name: Install Python Dependencies
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install pandas fastcrc colorama
 
-      # 5. Patches anwenden
       - name: Apply Patches
         run: |
-          cd quakec-m9
           python3 scripts/apply_nzp_m9_patches.py
 
-      # 6. QuakeC kompilieren
       - name: Compile QuakeC
         run: |
-          cd quakec-m9
-          mkdir -p build/standard build/fte
+          chmod +x bin/fteqcc-cli-lin
+          mkdir -p build/fte
           
           echo "=== Generiere Hash-Tabelle ==="
           python3 bin/qc_hash_generator.py -i tools/asset_conversion_table.csv -o source/server/hash_table.qc
-          
-          echo "=== Kompiliere Server (SSQC) ==="
-          bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/ssqc.src
           
           echo "=== Kompiliere Client (CSQC) ==="
           bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/csqc.src
@@ -64,20 +37,17 @@ jobs:
           bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/menu.src
           
           echo "=== Verschiebe fertige Dateien ==="
-          cp build/standard/progs.dat qwprogs.dat
           cp build/fte/csprogs.dat csprogs.dat
           cp build/fte/menu.dat menu.dat
           
           echo "=== Ergebnis ==="
-          ls -la qwprogs.dat csprogs.dat menu.dat
+          ls -la csprogs.dat menu.dat
 
-      # 7. Upload
       - name: Upload Dat Files
         uses: actions/upload-artifact@v4
         with:
           name: nzp-patched-files
           path: |
-            quakec-m9/qwprogs.dat
-            quakec-m9/csprogs.dat
-            quakec-m9/menu.dat
+            csprogs.dat
+            menu.dat
           if-no-files-found: error
