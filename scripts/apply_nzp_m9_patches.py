@@ -2,8 +2,7 @@
 # NZP-M9 Patches: Alle Features (Gore, HUD, Match-Fix, Atmosphäre, Nebel,
 # Coop-Browser-Navigation, A/B-Switch)
 # Idempotente Version - sicher für bereits gepatchte Dateien.
-# WICHTIG: source/menu/sui_sys.qc muss die offizielle Struktur haben.
-# Die Patches fügen nur an präzisen Ankern Code ein, ohne die Struktur zu verändern.
+# WICHTIG: source/client/main.qc muss die offizielle Struktur haben.
 
 import sys
 import re
@@ -107,29 +106,29 @@ patch(MENU_COOP, "void() Menu_Coop_Browse =\n{\n\tMenu_Coop_UpdateCache();",
 NAV_BLOCK = """
 string(string cur, float direction) Menu_Coop_Browse_Navigate =
 {
-	float is_in_list = (strlen(cur) >= 14 && substring(cur, 0, 14) == "cbm_serverlist");
-	float is_row = (strlen(cur) > 14);
-	if (direction > 0) {
-		if (is_in_list) {
-			if (!is_row) {
-				if (num_cached_servers > 0) { coop_browse_selected = 0; return "cbm_serverlistscrl0"; }
-			} else {
-				if (coop_browse_selected + 1 >= num_cached_servers) { coop_browse_selected = -1; return "cbm_refresh"; }
-				coop_browse_selected += 1;
-				return sprintf("cbm_serverlistscrl%d", coop_browse_selected);
-			}
-		}
-		return "";
-	}
-	if (direction < 0) {
-		if (is_in_list && is_row) {
-			if (coop_browse_selected - 1 < 0) { coop_browse_selected = -1; return "cbm_serverlist"; }
-			coop_browse_selected -= 1;
-			return sprintf("cbm_serverlistscrl%d", coop_browse_selected);
-		}
-		return "";
-	}
-	return "";
+\tfloat is_in_list = (strlen(cur) >= 14 && substring(cur, 0, 14) == "cbm_serverlist");
+\tfloat is_row = (strlen(cur) > 14);
+\tif (direction > 0) {
+\t\tif (is_in_list) {
+\t\t\tif (!is_row) {
+\t\t\t\tif (num_cached_servers > 0) { coop_browse_selected = 0; return "cbm_serverlistscrl0"; }
+\t\t\t} else {
+\t\t\t\tif (coop_browse_selected + 1 >= num_cached_servers) { coop_browse_selected = -1; return "cbm_refresh"; }
+\t\t\t\tcoop_browse_selected += 1;
+\t\t\t\treturn sprintf("cbm_serverlistscrl%d", coop_browse_selected);
+\t\t\t}
+\t\t}
+\t\treturn "";
+\t}
+\tif (direction < 0) {
+\t\tif (is_in_list && is_row) {
+\t\t\tif (coop_browse_selected - 1 < 0) { coop_browse_selected = -1; return "cbm_serverlist"; }
+\t\t\tcoop_browse_selected -= 1;
+\t\t\treturn sprintf("cbm_serverlistscrl%d", coop_browse_selected);
+\t\t}
+\t\treturn "";
+\t}
+\treturn "";
 }
 float() Menu_Coop_Browse_EnterContainer = { if (num_cached_servers <= 0) return FALSE; coop_browse_selected = 0; return TRUE; };
 """
@@ -138,8 +137,6 @@ patch(MENU_COOP, "#undef PREVBUTTON_FUNC", "#undef PREVBUTTON_FUNC" + NAV_BLOCK,
 # ==========================================
 # TEIL 2: SUI_SYS.QC – NAVIGATION & A/B-SWITCH
 # ==========================================
-# 2a: Forward-Deklarationen für die Navigationsfunktionen
-#     Diese werden am Dateiende angefügt, wo alle Originalfunktionen sichtbar sind.
 SUI_FORWARD = """
 
 // ==========================================
@@ -150,10 +147,6 @@ float() Menu_Coop_Browse_EnterContainer;
 """
 append_safe(SUI_SYS, SUI_FORWARD, "SUI: Forward-Deklarationen am Dateiende", "// NZP-M9: Forward-Deklarationen für Coop-Browser-Navigation")
 
-# 2b: Downarrow erweitern
-#     Anker: die Zeile "string current_hovered_option = _hover_actions[0];"
-#     innerhalb von _sui_menukey_downarrow.
-#     Marker: "Menu_Coop_Browse_Navigate(current_hovered_option, 1)"
 DOWNARROW_ANCHOR = "void() _sui_menukey_downarrow = {\n\tstring current_hovered_option = _hover_actions[0];\n\tswitch(current_menu) {"
 DOWNARROW_REPLACEMENT = """void() _sui_menukey_downarrow = {
 \tstring current_hovered_option = _hover_actions[0];
@@ -166,7 +159,6 @@ patch(SUI_SYS, DOWNARROW_ANCHOR, DOWNARROW_REPLACEMENT,
       "C2: Downarrow um Coop-Browser-Navigation erweitern",
       "Menu_Coop_Browse_Navigate(current_hovered_option, 1)")
 
-# 2c: Uparrow erweitern
 UPARROW_ANCHOR = "void() _sui_menukey_uparrow = {\n\tstring current_hovered_option = _hover_actions[0];\n\tswitch(current_menu) {"
 UPARROW_REPLACEMENT = """void() _sui_menukey_uparrow = {
 \tstring current_hovered_option = _hover_actions[0];
@@ -179,7 +171,6 @@ patch(SUI_SYS, UPARROW_ANCHOR, UPARROW_REPLACEMENT,
       "C3: Uparrow um Coop-Browser-Navigation erweitern",
       "Menu_Coop_Browse_Navigate(current_hovered_option, -1)")
 
-# 2d: Enter erweitern (Container-Enter)
 ENTER_ANCHOR = "void() _sui_menukey_enter = {\n\tif (_hover_actions[0] == \"\")\n\t\t_sui_menukey_downarrow();\n\n\t_click_actions[0] =  _hover_actions[0];\n\t_click_action_count = 1;\n\t_last_clicked_action_count = 1;\n};"
 ENTER_REPLACEMENT = """void() _sui_menukey_enter = {
 \tif (_hover_actions[0] == "")
@@ -195,8 +186,6 @@ patch(SUI_SYS, ENTER_ANCHOR, ENTER_REPLACEMENT,
       "D: Enter um Container-Enter erweitern",
       "Menu_Coop_Browse_EnterContainer())")
 
-# 2e: A/B-Switch in sui_input_event
-#     Anker: die Zeile "float(float evtype, float scanx, float chary, float devid) sui_input_event = {\n\tswitch (evtype)"
 AB_ANCHOR = "float(float evtype, float scanx, float chary, float devid) sui_input_event = {\n\tswitch (evtype)"
 AB_REPLACEMENT = """float(float evtype, float scanx, float chary, float devid) sui_input_event = {
 \tif (evtype == IE_KEYDOWN || evtype == IE_KEYUP) {
@@ -363,83 +352,85 @@ patch(CLIENT_MAIN, "void(float apiver, string enginename, float enginever) CSQC_
 patch(CLIENT_MAIN, "noref void() CSQC_WorldLoaded =", "void() CSQC_SpawnClientGore;\n\nnoref void() CSQC_WorldLoaded =", "Forward-Deklaration für CSQC_SpawnClientGore", "void() CSQC_SpawnClientGore;")
 
 # ==========================================
-# TEIL 5: CSQC_Parse_Event (KRITISCHER FIX)
+# TEIL 5: CSQC_Parse_Event – NUR return -> break (KEIN neuer Case)
 # ==========================================
-if "hitmark_ignore_time <= time" not in CLIENT_MAIN.read_text(encoding="utf-8"):
-    patch(CLIENT_MAIN, 'case 3:\n\t\t\t\t\tif (hitmark_ignore_time > time)\n\t\t\t\t\t\treturn;\n\n\t\t\t\t\thitmark_type = var_1;',
-        """case 3:
-					if (hitmark_ignore_time <= time) {
-						hitmark_type = var_1;
-						
-						if (time > hitmarker_sound_time) {
-							if (hitmark_type == 1) localsound_enhanced("sounds/zombie/headshot.wav", 0, 0.7);
-							else localsound_enhanced("sounds/weapons/knife/knife_hit.wav", 0, 0.5);
-							hitmarker_sound_time = time + 0.1;
-						}
-						
-						fov_punch_time = time + 0.08;
+# Der Original-Code hat im case 3 (Hitmark) ein "return;".
+# Dieses wird durch "break;" ersetzt, damit die switch-Anweisung korrekt verlassen wird.
+# Es wird KEIN neuer CSQC_EVENT_HITMARK-Case eingefügt.
+HITMARK_ANCHOR = "case 3:\n\t\t\t\t\tif (hitmark_ignore_time > time)\n\t\t\t\t\t\treturn;\n\n\t\t\t\t\thitmark_type = var_1;"
+HITMARK_REPLACEMENT = """case 3:
+					if (hitmark_ignore_time > time)
+						break;
 
-						if (hitmark_type == 1) {
-							if (time - kill_streak_last_time > 0.5) {
-								if (time > kill_streak_reset_time) kill_streak_count = 1;
-								else kill_streak_count += 1;
-								
-								kill_streak_last_time = time;
-								kill_streak_reset_time = time + 3.0;
-								
-								if (kill_streak_count == 2) { kill_streak_text = "DOUBLE KILL"; kill_streak_display_time = time + 2.5; }
-								else if (kill_streak_count == 3) { kill_streak_text = "TRIPLE KILL"; kill_streak_display_time = time + 2.5; }
-								else if (kill_streak_count >= 4) { kill_streak_text = "MULTI KILL!"; kill_streak_display_time = time + 2.5; }
-							}
-						}
-						
-						CSQC_SpawnClientGore();
-						
-						if (hitmark_type == 1) dmg_text_str = "KILL";
-						else dmg_text_str = "HIT";
-						dmg_text_time = time + 0.8;
-						
-						if (hitmark_type == 1) {
-							hitmark_time = time + 0.2;
-							hitmark_ignore_time = time + 0.2;
-						} else {
-							hitmark_time = time + 0.3;
-						}
-					}
-					break;""",
-        "CSQC_Parse_Event: BUGFIX (kein return) + Kill-Streak dedupe", "hitmark_ignore_time <= time")
+					hitmark_type = var_1;"""
+patch(CLIENT_MAIN, HITMARK_ANCHOR, HITMARK_REPLACEMENT,
+      "CSQC_Parse_Event: return -> break (kein neuer Case)",
+      "hitmark_ignore_time > time)\n\t\t\t\t\t\tbreak;")
 
 # ==========================================
-# TEIL 6: CSQC_UpdateView (Kamera, HUD, Crosshair)
+# TEIL 6: ATMOSPHÄRE-FUNKTIONEN (additiv)
 # ==========================================
-patch(CLIENT_MAIN, "\tCamera_AimSnap(camang);\n\n\tcamang[0] += cam_snap_difference[0];\n\tcamang[1] += cam_snap_difference[1];\n\tcamang[2] += cam_snap_difference[2];\n\n\tsetviewprop(VF_ANGLES, camang);",
-    """\tCamera_AimSnap(camang);
-\tcamang[0] += cam_snap_difference[0];
-\tcamang[1] += cam_snap_difference[1];
-\tcamang[2] += cam_snap_difference[2];
-\t
-\tif (screen_shake_intensity > 0) {
-\t\tcamang[0] += (random() * 2 - 1) * screen_shake_intensity * 0.3;
-\t\tcamang[1] += (random() * 2 - 1) * screen_shake_intensity * 0.3;
-\t\tcamang[2] += (random() * 2 - 1) * screen_shake_intensity * 0.1;
-\t}
-\tsetviewprop(VF_ANGLES, camang);
+ATMO_FUNCS = """
+// ==========================================
+// NZP-M9: Atmosphäre & Nebel
+// ==========================================
 
-\tfloat base_fov = autocvar(fov, 90) * getstatf(STAT_VIEWZOOM);
-\tif (time < fov_punch_time) {
-\t\tfloat punch_factor = (fov_punch_time - time) / 0.08;
-\t\tbase_fov = base_fov - (punch_factor * 8);
-\t}
-\tsetviewprop(VF_AFOV, base_fov);""",
-    "CSQC_UpdateView: Kamera-Effekte", "// NZP-M9: Screen-Shake")
+float() CSQC_IsIndoor =
+{
+\tvector start = playerOrigin + [0, 0, 16];
+\tvector end = start + [0, 0, 4096];
+\ttraceline(start, end, false, world);
 
-patch(CLIENT_MAIN, "setviewprop(VF_DRAWCROSSHAIR, 0);", "setviewprop(VF_DRAWCROSSHAIR, 0);\n\tsetviewprop(VF_DRAWCROSSHAIR, 0);", "Disable default Crosshair", "setviewprop(VF_DRAWCROSSHAIR, 0);\n\tsetviewprop(VF_DRAWCROSSHAIR, 0);")
-
-hud_block = """\tif (cvar("chase_active")) {
-\t\tChase_Update();
+\tif (trace_fraction == 1) {
+\t\treturn FALSE;
 \t}
 
-\t// NZP-M9: Atmosphäre (Nebel) vor dem Rendern aktualisieren
+\tif (pointcontents(trace_endpos) == CONTENT_SKY) {
+\t\treturn FALSE;
+\t}
+
+\treturn TRUE;
+};
+
+void() CSQC_UpdateAtmosphere =
+{
+\tif (time < nzp_fog_check_time) {
+\t\treturn;
+\t}
+\tnzp_fog_check_time = time + 0.5;
+
+\tfloat indoor = CSQC_IsIndoor();
+\tnzp_is_indoor = indoor;
+
+\tif (indoor != nzp_last_indoor_state || !nzp_fog_initialized) {
+\t\tnzp_last_indoor_state = indoor;
+\t\tnzp_fog_initialized = TRUE;
+
+\t\tif (indoor) {
+\t\t\tcvar_set("r_fog", "1");
+\t\t\tcvar_set("r_fog_color", "0.15 0.15 0.20");
+\t\t\tcvar_set("r_fog_start", "80");
+\t\t\tcvar_set("r_fog_end", "700");
+\t\t} else {
+\t\t\tcvar_set("r_fog", "1");
+\t\t\tcvar_set("r_fog_color", "0.45 0.45 0.50");
+\t\t\tcvar_set("r_fog_start", "500");
+\t\t\tcvar_set("r_fog_end", "3000");
+\t\t}
+\t}
+};
+
+// ==========================================
+"""
+patch(CLIENT_MAIN, "noref void(float width, float height, float menushown) CSQC_UpdateView =",
+    ATMO_FUNCS + "noref void(float width, float height, float menushown) CSQC_UpdateView =",
+    "Atmosphäre-Funktionen vor CSQC_UpdateView einfügen",
+    "// NZP-M9: Atmosphäre & Nebel")
+
+# ==========================================
+# TEIL 7: HUD-BLOCK (additiv, nach renderscene)
+# ==========================================
+HUD_ADDITION = """\t// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
 \tCSQC_UpdateAtmosphere();
 
 \t//does what you think it does
@@ -533,74 +524,10 @@ hud_block = """\tif (cvar("chase_active")) {
 \t\tsui_end();
 \t}"""
 
-patch(CLIENT_MAIN, "\tif (cvar(\"chase_active\")) {\n\t\tChase_Update();\n\t}\n\n\t//does what you think it does\n\trenderscene();",
-    hud_block,
-    "CSQC_UpdateView: Custom HUD, Crosshair, Low-Health & Dust", "--- NZP-M9 CUSTOM HUD ---")
-
-# ==========================================
-# TEIL 7: ATMOSPHÄRE & NEBEL
-# ==========================================
-ATMO_FUNCS = """
-// ==========================================
-// NZP-M9: Atmosphäre & Nebel
-// ==========================================
-
-// Erkennt, ob der Spieler sich in einem Innenraum befindet.
-// Trace vom Spieler nach oben: Trifft er CONTENT_SKY, ist er draußen.
-float() CSQC_IsIndoor =
-{
-\tvector start = playerOrigin + [0, 0, 16];
-\tvector end = start + [0, 0, 4096];
-\ttraceline(start, end, false, world);
-
-\tif (trace_fraction == 1) {
-\t\treturn FALSE;
-\t}
-
-\tif (pointcontents(trace_endpos) == CONTENT_SKY) {
-\t\treturn FALSE;
-\t}
-
-\treturn TRUE;
-};
-
-// Aktualisiert Nebel-Cvars je nach Innen/Außen.
-void() CSQC_UpdateAtmosphere =
-{
-\tif (time < nzp_fog_check_time) {
-\t\treturn;
-\t}
-\tnzp_fog_check_time = time + 0.5;
-
-\tfloat indoor = CSQC_IsIndoor();
-\tnzp_is_indoor = indoor;
-
-\tif (indoor != nzp_last_indoor_state || !nzp_fog_initialized) {
-\t\tnzp_last_indoor_state = indoor;
-\t\tnzp_fog_initialized = TRUE;
-
-\t\tif (indoor) {
-\t\t\t// INNEN: dichter, kühlerer Nebel
-\t\t\tcvar_set("r_fog", "1");
-\t\t\tcvar_set("r_fog_color", "0.15 0.15 0.20");
-\t\t\tcvar_set("r_fog_start", "80");
-\t\t\tcvar_set("r_fog_end", "700");
-\t\t} else {
-\t\t\t// AUSSEN: weiter, natürlicher Nebel
-\t\t\tcvar_set("r_fog", "1");
-\t\t\tcvar_set("r_fog_color", "0.45 0.45 0.50");
-\t\t\tcvar_set("r_fog_start", "500");
-\t\t\tcvar_set("r_fog_end", "3000");
-\t\t}
-\t}
-};
-
-// ==========================================
-"""
-patch(CLIENT_MAIN, "noref void(float width, float height, float menushown) CSQC_UpdateView =",
-    ATMO_FUNCS + "noref void(float width, float height, float menushown) CSQC_UpdateView =",
-    "Atmosphäre-Funktionen (CSQC_IsIndoor, CSQC_UpdateAtmosphere) einfügen",
-    "// NZP-M9: Atmosphäre & Nebel")
+patch(CLIENT_MAIN, "\t//does what you think it does\n\trenderscene();",
+    HUD_ADDITION,
+    "HUD-Block nach renderscene() einfügen",
+    "--- NZP-M9 CUSTOM HUD ---")
 
 print("\n=== Alle Patches erfolgreich angewendet (idempotent). ===")
 sys.exit(0)
