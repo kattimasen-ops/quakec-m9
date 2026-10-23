@@ -2,14 +2,10 @@
 	client/particles.qc
 */
 
-// Stored outside of struct for stack efficency.
 float   particle_optional_field;
 float   particle_optional_entity;
 vector  particle_position;
 
-//
-// Particles_MuzzleflashCallback()
-//
 void() Particles_MuzzleflashCallback =
 {
     if (getstatf(STAT_WEAPONZOOM) == 2 || !cvar("r_drawviewmodel") || cvar("chase_active"))
@@ -59,13 +55,11 @@ void() Particles_MuzzleflashCallback =
 	}
 };
 
-var struct
-{
+var struct {
     float   particle_type;
     string  particle_string;
     void()  particle_func;
-} csqc_particles[] =
-{
+} csqc_particles[] = {
     {CSQC_PART_MUZZLEFLASH, "", Particles_MuzzleflashCallback},
     {CSQC_PART_EXPLOSION, "weapons.explode", __NULL__},
     {CSQC_PART_BLOODIMPACT, "blood.blood_particle", __NULL__},
@@ -73,14 +67,16 @@ var struct
     {CSQC_PART_FIRE, "flames.flame_particle", __NULL__}
 };
 
-//
-// Particles_RunParticle()
-//
 void(float particle_type, vector position, float optional_field, float optional_entity) Particles_RunParticle =
 {
-    // NZP-M9: Roter Lichtblitz bei Blut-Einschlag
+    // NZP-M9: Roter Lichtblitz + zusätzliches Blut (einstellbar über gore_blood_count)
     if (particle_type == CSQC_PART_BLOODIMPACT && gore_enabled) {
         dynamiclight_add(position, 150, '1 0 0');
+        if (gore_blood_count > 1) {
+            for (int i = 1; i < gore_blood_count; i++) {
+                pointparticles(particleeffectnum("blood.blood_particle"), position + randomvec() * 15, '0 0 0', 1);
+            }
+        }
     }
     
     // NZP-M9: Screen-Shake bei Explosionen
@@ -100,9 +96,6 @@ void(float particle_type, vector position, float optional_field, float optional_
     }
 };
 
-//
-// Particles_Init()
-//
 void() Particles_Init =
 {
     int i;
@@ -115,59 +108,19 @@ void() Particles_Init =
     }			
 };
 
-//
-// NZP-M9 CLIENT-SIDE GORE + SOUND + KILL STREAK
-//
+// --- NZP-M9 CLIENT-SIDE GORE KILL EXPLOSION ---
 void() CSQC_SpawnClientGore =
 {
     vector view_org = getviewprop(VF_ORIGIN);
     vector view_ang = getviewprop(VF_ANGLES);
     makevectors(view_ang);
     
-    traceline(view_org, view_org + v_forward * 2048, MOVE_HITMODEL, world);
+    // Position ~100 Units in Blickrichtung (mitten im Feind)
+    vector hit_pos = view_org + v_forward * 100;
     
-    if (trace_fraction < 1) {
-        vector hit_pos = trace_endpos;
-        
-        // Hitmarker-Sound (mit Cooldown gegen Spam bei Maschinenpistolen)
-        if (time > hitmarker_sound_time) {
-            if (hitmark_type == 1) {
-                localsound_enhanced("sounds/zombie/headshot.wav", 0, 0.7);
-            } else {
-                localsound_enhanced("sounds/weapons/knife/knife_hit.wav", 0, 0.5);
-            }
-            hitmarker_sound_time = time + 0.05;
-        }
-        
-        // FOV-Punch bei jedem Schuss
-        fov_punch_time = time + 0.08;
-        
-        if (hitmark_type == 1) {
-            // Kill-Streak-Logik
-            if (time > kill_streak_reset_time) {
-                kill_streak_count = 1;
-            } else {
-                kill_streak_count += 1;
-            }
-            kill_streak_reset_time = time + 2.0;
-            
-            if (kill_streak_count == 2) {
-                kill_streak_text = "DOUBLE KILL";
-                kill_streak_display_time = time + 2.0;
-            } else if (kill_streak_count == 3) {
-                kill_streak_text = "TRIPLE KILL";
-                kill_streak_display_time = time + 2.0;
-            } else if (kill_streak_count >= 4) {
-                kill_streak_text = "MULTI KILL!";
-                kill_streak_display_time = time + 2.0;
-            }
-            
-            // Gore-Effekt
-            if (gore_enabled) {
-                pointparticles(particleeffectnum("blood.gibs"), hit_pos, '0 0 0', 1);
-                pointparticles(particleeffectnum("blood.gibs"), hit_pos + '0 0 15', '0 0 0', 1);
-                dynamiclight_add(hit_pos, gore_kill_light, '1 0 0');
-            }
-        }
+    if (hitmark_type == 1 && gore_enabled) {
+        pointparticles(particleeffectnum("blood.gibs"), hit_pos, '0 0 0', 1);
+        pointparticles(particleeffectnum("blood.gibs"), hit_pos + '0 0 15', '0 0 0', 1);
+        dynamiclight_add(hit_pos, gore_kill_light, '1 0 0');
     }
 };
