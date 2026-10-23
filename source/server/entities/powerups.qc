@@ -12,7 +12,7 @@
 
 	This program is distributed in the hope that it will be useful,
 	but WITHOUT ANY WARRANTY; without even the implied warranty of
-	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+	MERCHANTIBILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
 	See the GNU General Public License for more details.
 
@@ -833,25 +833,34 @@ void() PU_FreePerk =
 			continue;
 		}
 
+		// NZP-M9 FIX: Deterministische, uniforme Auswahl aus den verfuegbaren
+		// Perks. Die frueher verwendete while-Schleife konnte endlos laufen
+		// ("runaway loop error"), wenn random() keine der verfügbaren
+		// Perk-Ranges traf. perks_can_give ist an dieser Stelle garantiert > 0.
+		float num_avail = 0;
+		if (perks_can_give & P_REVIVE) num_avail++;
+		if (perks_can_give & P_JUG) num_avail++;
+		if (perks_can_give & P_SPEED) num_avail++;
+		if (perks_can_give & P_DOUBLE) num_avail++;
+		if (perks_can_give & P_STAMIN) num_avail++;
+		if (perks_can_give & P_FLOP) num_avail++;
+		if (perks_can_give & P_DEAD) num_avail++;
+		if (perks_can_give & P_MULE) num_avail++;
 
+		float pick = floor(random() * num_avail);
+		if (pick >= num_avail) pick = num_avail - 1;
+
+		float current = 0;
 		float perk_to_give = 0;
-		float found_perk_for_player = false;
 
-		while(!found_perk_for_player) {
-			float perk_rand = random();
-
-			if (perk_rand < (1/8) && (perks_can_give & P_REVIVE)) { self.sequence = 1; perk_to_give = P_REVIVE; }
-			else if (perk_rand < (2/8) && (perks_can_give & P_JUG)) { self.sequence = 2; perk_to_give = P_JUG; }
-			else if (perk_rand < (3/8) && (perks_can_give & P_SPEED)) { self.sequence = 3; perk_to_give = P_SPEED; }
-			else if (perk_rand < (4/8) && (perks_can_give & P_DOUBLE)) { self.has_doubletap_damage_buff = true; self.sequence = 4; perk_to_give = P_DOUBLE; }
-			else if (perk_rand < (5/8) && (perks_can_give & P_STAMIN)) { self.sequence = 5; perk_to_give = P_STAMIN; }
-			else if (perk_rand < (6/8) && (perks_can_give & P_FLOP)) { self.sequence = 6; perk_to_give = P_FLOP; }
-			else if (perk_rand < (7/8) && (perks_can_give & P_DEAD)) { self.sequence = 7; perk_to_give = P_DEAD; }
-			else if ((perks_can_give & P_MULE)) { self.sequence = 8; perk_to_give = P_MULE; }
-
-			if (perk_to_give != 0)
-				found_perk_for_player = true;
-		}
+		if (perks_can_give & P_REVIVE) { if (current == pick) { self.sequence = 1; perk_to_give = P_REVIVE; } current++; }
+		if (perks_can_give & P_JUG)    { if (current == pick) { self.sequence = 2; perk_to_give = P_JUG; }    current++; }
+		if (perks_can_give & P_SPEED)  { if (current == pick) { self.sequence = 3; perk_to_give = P_SPEED; }  current++; }
+		if (perks_can_give & P_DOUBLE) { if (current == pick) { self.has_doubletap_damage_buff = true; self.sequence = 4; perk_to_give = P_DOUBLE; } current++; }
+		if (perks_can_give & P_STAMIN) { if (current == pick) { self.sequence = 5; perk_to_give = P_STAMIN; } current++; }
+		if (perks_can_give & P_FLOP)   { if (current == pick) { self.sequence = 6; perk_to_give = P_FLOP; }   current++; }
+		if (perks_can_give & P_DEAD)   { if (current == pick) { self.sequence = 7; perk_to_give = P_DEAD; }   current++; }
+		if (perks_can_give & P_MULE)   { if (current == pick) { self.sequence = 8; perk_to_give = P_MULE; }   current++; }
 
 		players.style = perk_to_give;
 		players.usedent = self;
@@ -1283,4 +1292,3 @@ void(vector where, float type) Spawn_Powerup =
 
 	totalpowerups++;
 };
-
