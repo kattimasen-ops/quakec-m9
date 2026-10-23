@@ -41,6 +41,7 @@ def append_safe(path: Path, content: str, description: str, marker: str) -> None
 BASE = Path("source/menu")
 CLIENT = Path("source/client")
 SERVER = Path("source/server")
+PROGS = Path("progs")
 MENU_COOP = BASE / "menu_coop.qc"
 SUI_SYS   = BASE / "sui_sys.qc"
 MENU_VIDE = BASE / "menu_vide.qc"
@@ -54,9 +55,21 @@ PARTICLES_DIR = Path("particles")
 
 DAMAGE_QC = SERVER / "damage.qc"
 CLIENTFUNCS_QC = SERVER / "clientfuncs.qc"
+SSQC_SRC = PROGS / "ssqc.src"
 
 # ==========================================
-# TEIL 0: BASIS
+# TEIL 0: FIX SSQC.SRC FÜR FTE-TARGET
+# ==========================================
+patch(
+    SSQC_SRC,
+    '#pragma progs_dat "../build/standard/progs.dat"',
+    '#pragma progs_dat "../build/standard/progs.dat"\n#pragma target fte_5768',
+    "Füge #pragma target fte_5768 zu ssqc.src hinzu",
+    "#pragma target fte_5768"
+)
+
+# ==========================================
+# TEIL 0.5: BASIS
 # ==========================================
 if MENU_DEFS.exists():
     content = MENU_DEFS.read_text(encoding="utf-8")
