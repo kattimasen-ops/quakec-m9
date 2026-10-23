@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-# NZP-M9 Patches: Alle Features (Gore, HUD, Match-Fix, Atmosphäre, Nebel)
+# NZP-M9 Patches: Alle Features (Gore, HUD, Match-Fix, Atmosphäre, Nebel,
+# Coop-Browser-Navigation, A/B-Switch)
 # Idempotente Version - sicher für bereits gepatchte Dateien.
+# WICHTIG: source/menu/sui_sys.qc muss die offizielle Struktur haben.
+# Die Patches fügen nur an präzisen Ankern Code ein, ohne die Struktur zu verändern.
 
 import sys
 import re
@@ -15,16 +18,6 @@ def patch(path: Path, anchor: str, replacement: str, description: str, marker: s
         print(f"[OK]   {description}")
     else:
         print(f"[WARN] {description}: Anker nicht gefunden.")
-
-def force_replace_regex(path: Path, pattern: str, replacement: str, description: str):
-    if not path.exists(): sys.exit(1)
-    content = path.read_text(encoding="utf-8")
-    new_content, count = re.subn(pattern, replacement, content, count=1, flags=re.DOTALL)
-    if count >= 1:
-        path.write_text(new_content, encoding="utf-8")
-        print(f"[OK]   {description}")
-    else:
-        print(f"[FATAL] {description}: Konnte nicht ersetzt werden!")
 
 def ensure_line(path: Path, line: str, description: str) -> None:
     if not path.exists(): return
@@ -45,10 +38,8 @@ CLIENT = Path("source/client")
 MENU_COOP = BASE / "menu_coop.qc"
 SUI_SYS   = BASE / "sui_sys.qc"
 MENU_VIDE = BASE / "menu_vide.qc"
-MENU_MAIN_MENU = BASE / "m_menu.qc"
 MAIN_QC = BASE / "main.qc"
 CLIENT_MAIN = CLIENT / "main.qc"
-CLIENT_PARTICLES = CLIENT / "particles.qc"
 FTE_QC = CLIENT / "defs/fte.qc"
 MENU_DEFS = BASE / "defs/menu_defs.qc"
 MENU_CRED = BASE / "menu_cred.qc"
@@ -105,7 +96,7 @@ float nzp_fog_initialized;
 append_safe(CUSTOM_QC, custom_globals, "Füge M9-Globals zu custom.qc hinzu", "// NZP-M9 Custom Globals")
 
 # ==========================================
-# TEIL 1: SERVER-BROWSER & A/B Tausch
+# TEIL 1: COOP-BROWSER (menu_coop.qc)
 # ==========================================
 patch(MENU_COOP, "int num_cached_servers;", "int num_cached_servers;\nfloat coop_browse_selected;", "A1: Variable coop_browse_selected", "float coop_browse_selected;")
 
@@ -144,34 +135,81 @@ float() Menu_Coop_Browse_EnterContainer = { if (num_cached_servers <= 0) return 
 """
 patch(MENU_COOP, "#undef PREVBUTTON_FUNC", "#undef PREVBUTTON_FUNC" + NAV_BLOCK, "B: Navigate- + EnterContainer-Funktionen", "Menu_Coop_Browse_Navigate")
 
-patch(SUI_SYS, "#define printf(x, ...) print(sprintf(x, __VA_ARGS__))\n\n#endif",
-      "#define printf(x, ...) print(sprintf(x, __VA_ARGS__))\n\n#endif\n\nstring(string cur, float direction) Menu_Coop_Browse_Navigate;\nfloat() Menu_Coop_Browse_EnterContainer;",
-      "C1: Forward-Declarations in sui_sys.qc", "Menu_Coop_Browse_Navigate;")
+# ==========================================
+# TEIL 2: SUI_SYS.QC – NAVIGATION & A/B-SWITCH
+# ==========================================
+# 2a: Forward-Deklarationen für die Navigationsfunktionen
+#     Diese werden am Dateiende angefügt, wo alle Originalfunktionen sichtbar sind.
+SUI_FORWARD = """
 
-patch(SUI_SYS, "void() _sui_menukey_downarrow =\n{\n\tstring current_hovered_option = _hover_actions[0];\n\n\tswitch(current_menu) {",
-      "void() _sui_menukey_downarrow =\n{\n\tstring current_hovered_option = _hover_actions[0];\n\tif (current_menu == MENU_COOPBROWSE) {\n\t\tstring nav = Menu_Coop_Browse_Navigate(current_hovered_option, 1);\n\t\tif (nav != \"\") { _hover_actions[0] = nav; last_hovered_id = \"\"; _hover_action_count = 1; return; }\n\t}\n\tswitch(current_menu) {",
-      "C2: downarrow erweitern", "Menu_Coop_Browse_Navigate(current_hovered_option, 1)")
+// ==========================================
+// NZP-M9: Forward-Deklarationen für Coop-Browser-Navigation
+// ==========================================
+string(string cur, float direction) Menu_Coop_Browse_Navigate;
+float() Menu_Coop_Browse_EnterContainer;
+"""
+append_safe(SUI_SYS, SUI_FORWARD, "SUI: Forward-Deklarationen am Dateiende", "// NZP-M9: Forward-Deklarationen für Coop-Browser-Navigation")
 
-patch(SUI_SYS, "void() _sui_menukey_uparrow =\n{\n\tstring current_hovered_option = _hover_actions[0];\n\n\tswitch(current_menu) {",
-      "void() _sui_menukey_uparrow =\n{\n\tstring current_hovered_option = _hover_actions[0];\n\tif (current_menu == MENU_COOPBROWSE) {\n\t\tstring nav = Menu_Coop_Browse_Navigate(current_hovered_option, -1);\n\t\tif (nav != \"\") { _hover_actions[0] = nav; last_hovered_id = \"\"; _hover_action_count = 1; return; }\n\t}\n\tswitch(current_menu) {",
-      "C3: uparrow erweitern", "Menu_Coop_Browse_Navigate(current_hovered_option, -1)")
+# 2b: Downarrow erweitern
+#     Anker: die Zeile "string current_hovered_option = _hover_actions[0];"
+#     innerhalb von _sui_menukey_downarrow.
+#     Marker: "Menu_Coop_Browse_Navigate(current_hovered_option, 1)"
+DOWNARROW_ANCHOR = "void() _sui_menukey_downarrow = {\n\tstring current_hovered_option = _hover_actions[0];\n\tswitch(current_menu) {"
+DOWNARROW_REPLACEMENT = """void() _sui_menukey_downarrow = {
+\tstring current_hovered_option = _hover_actions[0];
+\tif (current_menu == MENU_COOPBROWSE) {
+\t\tstring nav = Menu_Coop_Browse_Navigate(current_hovered_option, 1);
+\t\tif (nav != "") { _hover_actions[0] = nav; last_hovered_id = ""; _hover_action_count = 1; return; }
+\t}
+\tswitch(current_menu) {"""
+patch(SUI_SYS, DOWNARROW_ANCHOR, DOWNARROW_REPLACEMENT,
+      "C2: Downarrow um Coop-Browser-Navigation erweitern",
+      "Menu_Coop_Browse_Navigate(current_hovered_option, 1)")
 
-patch(SUI_SYS, "void() _sui_menukey_enter =\n{\n\tif (_hover_actions[0] == \"\")\n\t\t_sui_menukey_downarrow();\n\n\t_click_actions[0] =  _hover_actions[0];\n\t_click_action_count = 1;\n\t_last_clicked_action_count = 1;\n};",
-      "void() _sui_menukey_enter =\n{\n\tif (_hover_actions[0] == \"\") _sui_menukey_downarrow();\n\tif (current_menu == MENU_COOPBROWSE && _hover_actions[0] == \"cbm_serverlist\") {\n\t\tif (Menu_Coop_Browse_EnterContainer()) _hover_actions[0] = \"cbm_serverlistscrl0\";\n\t}\n\t_click_actions[0] = _hover_actions[0]; _click_action_count = 1; _last_clicked_action_count = 1;\n};",
-      "D: enter auf Container", "Menu_Coop_Browse_EnterContainer())")
+# 2c: Uparrow erweitern
+UPARROW_ANCHOR = "void() _sui_menukey_uparrow = {\n\tstring current_hovered_option = _hover_actions[0];\n\tswitch(current_menu) {"
+UPARROW_REPLACEMENT = """void() _sui_menukey_uparrow = {
+\tstring current_hovered_option = _hover_actions[0];
+\tif (current_menu == MENU_COOPBROWSE) {
+\t\tstring nav = Menu_Coop_Browse_Navigate(current_hovered_option, -1);
+\t\tif (nav != "") { _hover_actions[0] = nav; last_hovered_id = ""; _hover_action_count = 1; return; }
+\t}
+\tswitch(current_menu) {"""
+patch(SUI_SYS, UPARROW_ANCHOR, UPARROW_REPLACEMENT,
+      "C3: Uparrow um Coop-Browser-Navigation erweitern",
+      "Menu_Coop_Browse_Navigate(current_hovered_option, -1)")
 
-patch(SUI_SYS, "float(float evtype, float scanx, float chary, float devid) sui_input_event =\n{\n\tswitch (evtype)",
-    """float(float evtype, float scanx, float chary, float devid) sui_input_event =
-{
+# 2d: Enter erweitern (Container-Enter)
+ENTER_ANCHOR = "void() _sui_menukey_enter = {\n\tif (_hover_actions[0] == \"\")\n\t\t_sui_menukey_downarrow();\n\n\t_click_actions[0] =  _hover_actions[0];\n\t_click_action_count = 1;\n\t_last_clicked_action_count = 1;\n};"
+ENTER_REPLACEMENT = """void() _sui_menukey_enter = {
+\tif (_hover_actions[0] == "")
+\t\t_sui_menukey_downarrow();
+\tif (current_menu == MENU_COOPBROWSE && _hover_actions[0] == "cbm_serverlist") {
+\t\tif (Menu_Coop_Browse_EnterContainer()) _hover_actions[0] = "cbm_serverlistscrl0";
+\t}
+\t_click_actions[0] =  _hover_actions[0];
+\t_click_action_count = 1;
+\t_last_clicked_action_count = 1;
+};"""
+patch(SUI_SYS, ENTER_ANCHOR, ENTER_REPLACEMENT,
+      "D: Enter um Container-Enter erweitern",
+      "Menu_Coop_Browse_EnterContainer())")
+
+# 2e: A/B-Switch in sui_input_event
+#     Anker: die Zeile "float(float evtype, float scanx, float chary, float devid) sui_input_event = {\n\tswitch (evtype)"
+AB_ANCHOR = "float(float evtype, float scanx, float chary, float devid) sui_input_event = {\n\tswitch (evtype)"
+AB_REPLACEMENT = """float(float evtype, float scanx, float chary, float devid) sui_input_event = {
 \tif (evtype == IE_KEYDOWN || evtype == IE_KEYUP) {
 \t\tif (scanx == K_GP_A) scanx = K_ESCAPE;
 \t\telse if (scanx == K_GP_B) scanx = K_ENTER;
 \t}
-\tswitch (evtype)""",
-    "FIX: A/B Button Swap", "// NZP-M9: A = Zurueck")
+\tswitch (evtype)"""
+patch(SUI_SYS, AB_ANCHOR, AB_REPLACEMENT,
+      "FIX: A/B Button Swap",
+      "// NZP-M9: A = Zurueck")
 
 # ==========================================
-# TEIL 2: VIDEO-MENÜ
+# TEIL 3: VIDEO-MENÜ
 # ==========================================
 if MENU_VIDE.exists():
     content = MENU_VIDE.read_text(encoding="utf-8")
@@ -197,7 +235,8 @@ float current_filter;''',
     print("[OK]   E1/E2: Video-Button-Array & Variablen geprüft")
 
 if 'current_decals = cvar("nzp_decals");' not in MENU_VIDE.read_text(encoding="utf-8"):
-    force_replace_regex(MENU_VIDE, r"void\(\) Menu_Video_StoreCurrentSettings =\s*\{.*?\}",
+    content = MENU_VIDE.read_text(encoding="utf-8")
+    new_content, count = re.subn(r"void\(\) Menu_Video_StoreCurrentSettings =\s*\{.*?\}",
     '''void() Menu_Video_StoreCurrentSettings =
 {
     current_fullscreen = cvar("vid_fullscreen");
@@ -210,7 +249,12 @@ if 'current_decals = cvar("nzp_decals");' not in MENU_VIDE.read_text(encoding="u
     current_shadows = cvar("r_shadows");
     current_bob = (cvar("cl_bobup") > 0);
     current_filter = (substring(strtoupper(cvar_string("gl_texturemode")), 0, 10) == "GL_NEAREST");
-}''', "E3: StoreCurrentSettings")
+}''', content, count=1, flags=re.DOTALL)
+    if count >= 1:
+        MENU_VIDE.write_text(new_content, encoding="utf-8")
+        print("[OK]   E3: StoreCurrentSettings")
+    else:
+        print("[WARN] E3: StoreCurrentSettings Anker nicht gefunden")
 
 if "Menu_Video_UpdateDynLight" not in MENU_VIDE.read_text(encoding="utf-8"):
     patch(MENU_VIDE, "void() Menu_Video_UpdateUltrawide =", '''void() Menu_Video_UpdateDecals = { Menu_PlaySound(MENU_SND_ENTER); current_decals = !current_decals; cvar_set("nzp_decals", ftos(current_decals)); };
@@ -275,13 +319,18 @@ void() Menu_Video =
 
     sui_pop_frame();	
 };'''
-    if "void() Menu_Video =" in MENU_VIDE.read_text(encoding="utf-8"):
-        force_replace_regex(MENU_VIDE, r"void\(\) Menu_Video\s*=\s*\{.*?\n\};", menu_video_function, "E5: Menu_Video überschreiben")
+    content = MENU_VIDE.read_text(encoding="utf-8")
+    new_content, count = re.subn(r"void\(\) Menu_Video\s*=\s*\{.*?\n\};", menu_video_function, content, count=1, flags=re.DOTALL)
+    if count >= 1:
+        MENU_VIDE.write_text(new_content, encoding="utf-8")
+        print("[OK]   E5: Menu_Video überschreiben")
+    else:
+        print("[WARN] E5: Menu_Video Anker nicht gefunden")
 
 patch(MAIN_QC, 'build_datetime = fgets(file);', 'build_datetime = "M9 Pro Custom Build";\n        // build_datetime = fgets(file);', "Custom Version String", "M9 Pro Custom Build")
 
 # ==========================================
-# TEIL 3: CLIENT_MAIN - INITIALISIERUNG
+# TEIL 4: CLIENT_MAIN - INITIALISIERUNG
 # ==========================================
 patch(CLIENT_MAIN, "void(float apiver, string enginename, float enginever) CSQC_Init =\n{",
     """void(float apiver, string enginename, float enginever) CSQC_Init =
@@ -314,7 +363,7 @@ patch(CLIENT_MAIN, "void(float apiver, string enginename, float enginever) CSQC_
 patch(CLIENT_MAIN, "noref void() CSQC_WorldLoaded =", "void() CSQC_SpawnClientGore;\n\nnoref void() CSQC_WorldLoaded =", "Forward-Deklaration für CSQC_SpawnClientGore", "void() CSQC_SpawnClientGore;")
 
 # ==========================================
-# TEIL 4: CSQC_Parse_Event (KRITISCHER FIX)
+# TEIL 5: CSQC_Parse_Event (KRITISCHER FIX)
 # ==========================================
 if "hitmark_ignore_time <= time" not in CLIENT_MAIN.read_text(encoding="utf-8"):
     patch(CLIENT_MAIN, 'case 3:\n\t\t\t\t\tif (hitmark_ignore_time > time)\n\t\t\t\t\t\treturn;\n\n\t\t\t\t\thitmark_type = var_1;',
@@ -361,7 +410,7 @@ if "hitmark_ignore_time <= time" not in CLIENT_MAIN.read_text(encoding="utf-8"):
         "CSQC_Parse_Event: BUGFIX (kein return) + Kill-Streak dedupe", "hitmark_ignore_time <= time")
 
 # ==========================================
-# TEIL 5: CSQC_UpdateView (Kamera, HUD, Crosshair)
+# TEIL 6: CSQC_UpdateView (Kamera, HUD, Crosshair)
 # ==========================================
 patch(CLIENT_MAIN, "\tCamera_AimSnap(camang);\n\n\tcamang[0] += cam_snap_difference[0];\n\tcamang[1] += cam_snap_difference[1];\n\tcamang[2] += cam_snap_difference[2];\n\n\tsetviewprop(VF_ANGLES, camang);",
     """\tCamera_AimSnap(camang);
@@ -386,7 +435,6 @@ patch(CLIENT_MAIN, "\tCamera_AimSnap(camang);\n\n\tcamang[0] += cam_snap_differe
 
 patch(CLIENT_MAIN, "setviewprop(VF_DRAWCROSSHAIR, 0);", "setviewprop(VF_DRAWCROSSHAIR, 0);\n\tsetviewprop(VF_DRAWCROSSHAIR, 0);", "Disable default Crosshair", "setviewprop(VF_DRAWCROSSHAIR, 0);\n\tsetviewprop(VF_DRAWCROSSHAIR, 0);")
 
-# HUD-Block inkl. Atmosphäre-Aufruf vor renderscene()
 hud_block = """\tif (cvar("chase_active")) {
 \t\tChase_Update();
 \t}
@@ -490,9 +538,8 @@ patch(CLIENT_MAIN, "\tif (cvar(\"chase_active\")) {\n\t\tChase_Update();\n\t}\n\
     "CSQC_UpdateView: Custom HUD, Crosshair, Low-Health & Dust", "--- NZP-M9 CUSTOM HUD ---")
 
 # ==========================================
-# TEIL 6: ATMOSPHÄRE & NEBEL
+# TEIL 7: ATMOSPHÄRE & NEBEL
 # ==========================================
-# Funktionen vor CSQC_UpdateView einfügen
 ATMO_FUNCS = """
 // ==========================================
 // NZP-M9: Atmosphäre & Nebel
@@ -500,32 +547,26 @@ ATMO_FUNCS = """
 
 // Erkennt, ob der Spieler sich in einem Innenraum befindet.
 // Trace vom Spieler nach oben: Trifft er CONTENT_SKY, ist er draußen.
-// Trifft er einen soliden Brush (kein Sky), ist er drinnen.
 float() CSQC_IsIndoor =
 {
 \tvector start = playerOrigin + [0, 0, 16];
 \tvector end = start + [0, 0, 4096];
 \ttraceline(start, end, false, world);
 
-\t// Nichts getroffen -> offener Himmel
 \tif (trace_fraction == 1) {
 \t\treturn FALSE;
 \t}
 
-\t// Sky getroffen -> draußen
 \tif (pointcontents(trace_endpos) == CONTENT_SKY) {
 \t\treturn FALSE;
 \t}
 
-\t// Solider Brush getroffen -> drinnen
 \treturn TRUE;
 };
 
 // Aktualisiert Nebel-Cvars je nach Innen/Außen.
-// Wird nur bei Zustandswechsel ausgeführt (kein Cvar-Spam).
 void() CSQC_UpdateAtmosphere =
 {
-\t// Nur alle 0.5 Sekunden prüfen (Performance)
 \tif (time < nzp_fog_check_time) {
 \t\treturn;
 \t}
@@ -534,7 +575,6 @@ void() CSQC_UpdateAtmosphere =
 \tfloat indoor = CSQC_IsIndoor();
 \tnzp_is_indoor = indoor;
 
-\t// Nur bei Zustandswechsel oder Initialisierung Cvars setzen
 \tif (indoor != nzp_last_indoor_state || !nzp_fog_initialized) {
 \t\tnzp_last_indoor_state = indoor;
 \t\tnzp_fog_initialized = TRUE;
