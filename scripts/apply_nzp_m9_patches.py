@@ -67,18 +67,16 @@ MENU_VIDE = BASE / "menu_vide.qc"
 CLIENT_MAIN = CLIENT / "main.qc"
 FTE_QC = CLIENT / "defs/fte.qc"
 MENU_DEFS = BASE / "defs/menu_defs.qc"
-MENU_MAIN = BASE / "main.qc" # <-- NEU: Hier definieren wir m_drawloading
+MENU_MAIN = BASE / "main.qc"
 
 # ==========================================
 # TEIL 0: FEHLENDE DEKLARATIONEN & BUILTINS
 # ==========================================
 
-# 1. fte.qc: Builtins und fehlende Entitätsfelder
 ensure_line(FTE_QC, ".float is_in_menu;", "Füge is_in_menu Feld hinzu")
 ensure_line(FTE_QC, "void(string soundname, float channel, float volume) localsound_enhanced = { localsound(soundname, channel, volume); };", "Füge localsound_enhanced Wrapper hinzu")
 ensure_line(FTE_QC, "void(float dest) setkeydest = #602;", "Füge setkeydest Builtin hinzu")
 
-# 2. menu_defs.qc: Forward-Deklarationen für m_toggle und m_drawloading
 menu_defs_injection = """
 // --- NZP-M9 Forward Declarations ---
 void(float wantmode) m_toggle;
@@ -87,7 +85,6 @@ void(vector screensize, float notmenu) m_drawloading;
 """
 append_safe(MENU_DEFS, menu_defs_injection, "Füge menu_defs.qc Forward-Declarations hinzu", "NZP-M9 Forward Declarations")
 
-# 3. menu/main.qc: Echte Definition für m_drawloading hinzufügen
 menu_main_injection = """
 // --- NZP-M9: Dummy-Implementierung für m_drawloading ---
 void(vector screensize, float notmenu) m_drawloading = { };
@@ -95,7 +92,6 @@ void(vector screensize, float notmenu) m_drawloading = { };
 """
 append_safe(MENU_MAIN, menu_main_injection, "Füge m_drawloading Definition in menu/main.qc hinzu", "NZP-M9 m_drawloading Definition")
 
-# 4. Entferne float menu_active; aus client/main.qc (optional)
 patch(
     CLIENT_MAIN,
     anchor="float menu_active;",
@@ -148,18 +144,28 @@ string(string cur, float direction) Menu_Coop_Browse_Navigate =
 	float is_row = (strlen(cur) > 14);
 
 	if (direction > 0) {
-		if (is_in_list && is_row) {
-			if (coop_browse_selected + 1 >= num_cached_servers) {
-				coop_browse_selected = -1;
-				return "cbm_refresh";
+		if (is_in_list) {
+			if (!is_row) {
+				// Auf dem Container -> Springe in die erste Zeile
+				if (num_cached_servers > 0) {
+					coop_browse_selected = 0;
+					return "cbm_serverlistscrl0";
+				}
+			} else {
+				// In der Liste -> Springe zur nächsten Zeile
+				if (coop_browse_selected + 1 >= num_cached_servers) {
+					coop_browse_selected = -1;
+					return "cbm_refresh";
+				}
+				coop_browse_selected += 1;
+				return sprintf("cbm_serverlistscrl%d", coop_browse_selected);
 			}
-			coop_browse_selected += 1;
-			return sprintf("cbm_serverlistscrl%d", coop_browse_selected);
 		}
 		return "";
 	}
 	if (direction < 0) {
 		if (is_in_list && is_row) {
+			// In der Liste -> Springe zur vorherigen Zeile
 			if (coop_browse_selected - 1 < 0) {
 				coop_browse_selected = -1;
 				return "cbm_serverlist";
