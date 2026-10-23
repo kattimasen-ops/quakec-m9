@@ -46,6 +46,7 @@ MENU_VIDE = BASE / "menu_vide.qc"
 MENU_MAIN_MENU = BASE / "m_menu.qc"
 MAIN_QC = BASE / "main.qc"
 CLIENT_MAIN = CLIENT / "main.qc"
+CLIENT_HUD = CLIENT / "hud.qc"
 FTE_QC = CLIENT / "defs/fte.qc"
 MENU_DEFS = BASE / "defs/menu_defs.qc"
 MENU_CRED = BASE / "menu_cred.qc"
@@ -312,7 +313,7 @@ patch(
 )
 
 # ==========================================
-# TEIL 4: CUSTOM HUD & VISUALS (KILLS, VIGNETTE, DAMAGE NUMBERS)
+# TEIL 4: CUSTOM HUD & VISUALS (KILLS oben rechts, TIME, DAMAGE NUMBERS)
 # ==========================================
 
 # 1. Variablen in main.qc (CSQC) hinzufügen
@@ -337,7 +338,7 @@ patch(
     "dmg_text_str = \"KILL\";"
 )
 
-# 3. Vignette, Damage Numbers und Kill-Counter im CSQC_UpdateView zeichnen
+# 3. Damage Numbers, Kill-Counter (oben rechts) und Time im CSQC_UpdateView zeichnen
 patch(
     CLIENT_MAIN,
     "\tif (cvar(\"chase_active\")) {\n\t\tChase_Update();\n\t}\n\n\t//does what you think it does\n\trenderscene();",
@@ -348,35 +349,33 @@ patch(
 \t//does what you think it does
 \trenderscene();
 
-\t// --- NZP-M9 VIGNETTE ---
-\tfloat v_size = 40; // Breite des dunklen Randes
-\tfloat v_alpha = 0.4; // Stärke
-\tdrawfill([0, 0], [g_width, v_size], [0, 0, 0], v_alpha, 0);
-\tdrawfill([0, g_height - v_size], [g_width, v_size], [0, 0, 0], v_alpha, 0);
-\tdrawfill([0, v_size], [v_size, g_height - v_size*2], [0, 0, 0], v_alpha, 0);
-\tdrawfill([g_width - v_size, v_size], [v_size, g_height - v_size*2], [0, 0, 0], v_alpha, 0);
-
-\t// --- NZP-M9 KILLS & DAMAGE NUMBERS ---
+\t// --- NZP-M9 KILLS, TIME & DAMAGE NUMBERS ---
 \tsui_begin(g_width, g_height);
 \t
-\t// Kill Counter unten rechts
+\tsui_set_align([SUI_ALIGN_END, SUI_ALIGN_START]);
+\t
+\t// Kill Counter oben rechts
 \tfloat my_kills = getstatf(STAT_KILLEDMONSTERS);
-\tsui_set_align([SUI_ALIGN_END, SUI_ALIGN_END]);
-\tsui_text([-10, -40], MENU_TEXT_MEDIUM, sprintf("KILLS: %d", my_kills), [0.8, 0.2, 1], 1, 0);
+\tsui_text([-10, 10], MENU_TEXT_MEDIUM, sprintf("KILLS: %d", my_kills), [0.8, 0.2, 1], 1, 0);
+\t
+\t// Survival Time
+\tfloat mins = floor(cltime / 60);
+\tfloat secs = floor(cltime % 60);
+\tsui_text([-10, 30], MENU_TEXT_SMALL, sprintf("TIME: %02d:%02d", mins, secs), [1, 1, 1], 1, 0);
 
-\t// Damage Numbers
+\t// Damage Numbers (Kleiner und näher am Fadenkreuz)
 \tif (time < dmg_text_time) {
 \t\tfloat diff = dmg_text_time - time; // 0.8 -> 0.0
-\t\tfloat offset_y = 100 - ((0.8 - diff) * 80); // Floatet von 100 nach 20 hoch
+\t\tfloat offset_y = 60 - ((0.8 - diff) * 40); // Floatet von 60 nach 20 hoch
 \t\tvector dmg_color = [1, 0.2, 1]; // Lila
 \t\tif (dmg_text_str == "KILL") dmg_color = [1, 0, 0]; // Rot bei Kill
 
 \t\tsui_set_align([SUI_ALIGN_CENTER, SUI_ALIGN_CENTER]);
-\t\tsui_text([0, -offset_y], MENU_TEXT_LARGE, dmg_text_str, dmg_color, diff, 0);
+\t\tsui_text([0, -offset_y], MENU_TEXT_MEDIUM, dmg_text_str, dmg_color, diff, 0);
 \t}
 \tsui_end();""",
-    "Zeichne Vignette, Kill-Counter und Damage Numbers",
-    "--- NZP-M9 VIGNETTE ---"
+    "Zeichne Kill-Counter (oben rechts), Time und Damage Numbers",
+    "--- NZP-M9 KILLS, TIME & DAMAGE NUMBERS ---"
 )
 
 print("\n=== Alle Patches erfolgreich angewendet. ===")
