@@ -69,19 +69,7 @@ ensure_line(MENU_DEFS, "float last_input_deviceid;", "Füge last_input_deviceid 
 ensure_line(MENU_DEFS, "void(float wantmode) m_toggle;", "Füge m_toggle Deklaration hinzu")
 append_safe(MENU_DEFS, "\n#ifndef MENU\nvoid() Menu_DrawMapPreview = { };\n#endif\n", "Füge menu_defs.qc Dummy hinzu", "void() Menu_DrawMapPreview = { };")
 
-# HIER IST DER FIX: Variablen früh deklarieren und menu_active entfernen
-patch(
-    CLIENT_MAIN,
-    "float menu_active;",
-    """// --- NZP-M9 Custom HUD Variablen (Muss ganz oben stehen!) ---
-float menu_active;
-float dmg_text_time;
-string dmg_text_str;
-float m9_custom_kills;""",
-    "Deklariere HUD-Variablen ganz oben und entferne doppeltes menu_active",
-    "float m9_custom_kills;"
-)
-
+patch(CLIENT_MAIN, "float menu_active;", "// float menu_active;", "Entferne doppelte menu_active Definition", "// float menu_active;")
 MENU_CRED.write_text("void() Menu_Credits = { Menu_DrawBackground(); Menu_DrawTitle(\"CREDITS\"); Menu_DrawMapPanel(); sui_text([150, 100], MENU_TEXT_MEDIUM, \"Credits are currently disabled in this build.\", [1, 1, 1], 1, 0); Menu_Button(-1, \"cr_back\", \"BACK\", \"Return to Main Menu.\") ? current_menu = MENU_MAIN : 0; sui_pop_frame(); };", encoding="utf-8")
 
 # ==========================================
@@ -326,9 +314,22 @@ patch(
 # ==========================================
 # TEIL 4: CUSTOM HUD & VISUALS (KILLS, TIME, DAMAGE NUMBERS)
 # ==========================================
-# (Variablen sind bereits oben in TEIL 0 deklariert)
 
-# 1. Kills zurücksetzen bei Mapstart
+# 1. Variablen deklarieren (vor CSQC_WorldLoaded, damit sie früh genug bekannt sind)
+patch(
+    CLIENT_MAIN,
+    "noref void() CSQC_WorldLoaded =",
+    """// --- NZP-M9 Custom HUD Variablen ---
+float dmg_text_time;
+string dmg_text_str;
+float m9_custom_kills;
+
+noref void() CSQC_WorldLoaded =""",
+    "Deklariere HUD-Variablen",
+    "float m9_custom_kills;"
+)
+
+# 2. Kills zurücksetzen bei Mapstart
 patch(
     CLIENT_MAIN,
     "noref void() CSQC_WorldLoaded =\n{",
@@ -337,7 +338,7 @@ patch(
     "m9_custom_kills = 0;"
 )
 
-# 2. Damage Numbers & Kills im CSQC_Parse_Event triggern
+# 3. Damage Numbers & Kills im CSQC_Parse_Event triggern
 patch(
     CLIENT_MAIN,
     'case 3:\n\t\t\t\t\tif (hitmark_ignore_time > time)\n\t\t\t\t\t\treturn;\n\n\t\t\t\t\thitmark_type = var_1;',
@@ -346,7 +347,7 @@ patch(
     "m9_custom_kills += 1;"
 )
 
-# 3. HUD Zeichnen (mit Pause-Check)
+# 4. HUD Zeichnen (mit Pause-Check)
 patch(
     CLIENT_MAIN,
     "\tif (cvar(\"chase_active\")) {\n\t\tChase_Update();\n\t}\n\n\t//does what you think it does\n\trenderscene();",
