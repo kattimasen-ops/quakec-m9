@@ -131,32 +131,47 @@ def generate_qc_file(csv_data):
 
 def read_csv_data():
     '''
-    Parses the input_file .CSV into a Pandas dictionary,
-    performs the hashing on the first indexes, and sorts
-    in ascending order.
+    Parses the input_file .CSV, hashes the first column,
+    sorts in ascending order and returns the new DataFrame.
+
+    NZP-M9 FIX (Oct 2026):
+    - pandas 2.0+ blockiert in-place Zuweisung von int in str-dtypes.
+    - Moderne pandas-Versionen iterieren bei `for x in df.values` über
+      KOPIEN, wodurch die alten CRC-Werte nie geschrieben wurden und der
+      QuakeC-Compiler später an Zeilen wie `misc/buy.wav` scheiterte.
+    - Wir bauen den DataFrame daher komplett neu auf.
     '''
     global original_lengths, original_names
-    csv_data = pandas.read_csv(args['input_file'])
 
-    # Grab every value before we overwrite column 0
-    for value in csv_data.values:
-        original_lengths.append(len(str(value[0])))
-        original_names.append(str(value[0]))
+    # Alles als String einlesen, damit die Originalreihenfolge stabil bleibt.
+    csv_data = pandas.read_csv(args['input_file'], dtype=str, keep_default_na=False)
 
-    # NZP-M9 FIX: 'for value in csv_data.values' iteriert über KOPIEN.
-    # Frühere Versionen haben die CRC-Hashes nie in die DataFrame geschrieben,
-    # was QuakeC-Syntaxfehler bei Zeilen wie 'misc/buy.wav' ausgelöst hat.
-    # Direkte Zuweisung per iloc behebt das.
-    for i in range(len(csv_data)):
-        original_value = csv_data.iloc[i, 0]
-        csv_data.iloc[i, 0] = int(crc16.ibm_3740(str.encode(str(original_value))))
+    n = len(csv_data)
+    columns = list(csv_data.columns)
 
-    # Now order everything by ascending order
-    csv_data = csv_data.sort_values(csv_data.columns[0])
-    original_lengths = [original_lengths[i] for i in csv_data.index]
-    original_names = [original_names[i] for i in csv_data.index]
+    # Originalreihenfolge merken (Index -> Originalstring).
+    orig_by_index = {i: str(csv_data.iloc[i, 0]) for i in range(n)}
 
-    return csv_data
+    # CRC-Werte berechnen.
+    crc_values = [int(crc16.ibm_3740(str.encode(orig_by_index[i]))) for i in range(n)]
+
+    # Neues DataFrame aufbauen: Spalte 0 = int-CRCs, Rest = Strings.
+    new_data = {columns[0]: crc_values}
+    for col_idx, col_name in enumerate(columns[1:], start=1):
+        new_data[col_name] = [str(csv_data.iloc[i, col_idx]) for i in range(n)]
+
+    new_dataframe = pandas.DataFrame(new_data)
+    # Originalreihenfolge als Index festhalten, damit `sort_values` sie uns nicht zerstört.
+    new_dataframe.index = csv_data.index
+
+    # Aufsteigend nach CRC sortieren.
+    sorted_dataframe = new_dataframe.sort_values(columns[0])
+
+    # Originalnamen und -längen passend zum sortierten Index ordnen.
+    original_lengths = [len(orig_by_index[i]) for i in sorted_dataframe.index]
+    original_names = [orig_by_index[i] for i in sorted_dataframe.index]
+
+    return sorted_dataframe
 
 def fetch_cli_arguments():
     '''
