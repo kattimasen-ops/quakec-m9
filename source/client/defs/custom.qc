@@ -5,9 +5,7 @@
 #pragma warning disable Q302
 
 float g_width, g_height;
-
 float weapon;
-
 float tracercounter;
 .float rate;
 .vector targetpos;
@@ -25,7 +23,6 @@ string useprint_strings[256];
 vector useprint_colors[256];
 
 float active_gamemode;
-
 float bettyprompt_time;
 
 float hud_toast_endtime;
@@ -50,7 +47,6 @@ float broadcast_num;
 string character_name;
 
 #define MAX_REVIVE_ICONS	16
-
 var struct revive_s {
 	float draw;
 	float timer;
@@ -73,9 +69,7 @@ float player_count;
 float score_show;
 
 #define MAX_ACHIEVEMENTS    42
-
-var struct achievementlist_t
-{
+var struct achievementlist_t {
     string      img;
     float       unlocked;
     string      name;
@@ -86,7 +80,6 @@ var struct achievementlist_t
 float active_achievement;
 float current_achievement_page;
 float achievement_pages;
-
 float sniper_hold_breath;
 
 float K_LEFTDOWN, K_RIGHTDOWN, K_BACKDOWN, K_FORWARDDOWN;
@@ -106,16 +99,13 @@ float screenflash_worktime;
 float screenflash_starttime;
 
 .float stance;
-
 vector camang;
 
 string chaptertitle;
 string location;
 string date;
 string person;
-
 string huddir;
-
 int platform_is_web;
 
 float stopwatch_sec;
@@ -130,11 +120,8 @@ float stopwatch_round_starttime;
 
 float GPButtonHeldBeginTime[24];
 float last_input_deviceid;
-
 string build_datetime;
-
 vector gun_kick;
-
 float hide_viewmodel;
 
 vector playerOrigin;
@@ -152,6 +139,7 @@ string dmg_text_str;
 // Gore-Mod Steuerung
 float gore_enabled;
 float gore_kill_light;
+float gore_blood_count;
 
 // Damage-Indicator (roter Rand bei HP-Verlust)
 float dmg_indicator_alpha;
@@ -170,4 +158,9 @@ float fov_punch_time;
 float kill_streak_count;
 float kill_streak_reset_time;
 float kill_streak_display_time;
+float kill_streak_last_time;
 string kill_streak_text;
+
+// Low-Health & Ambient
+float heartbeat_time;
+float ambient_dust_time;
