@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# NZP-M9 Patches: Server-Browser, Performance, HUD & Client-Side Gore Mod
+# NZP-M9 Patches: Server-Browser, Performance, HUD & Extreme Client-Side Gore
 
 import sys
 import re
@@ -53,7 +53,7 @@ MENU_CRED = BASE / "menu_cred.qc"
 PARTICLES_DIR = Path("particles")
 
 # ==========================================
-# TEIL 0: BASIS
+# TEIL 0: BASIS (Unverändert)
 # ==========================================
 if MENU_DEFS.exists():
     content = MENU_DEFS.read_text(encoding="utf-8")
@@ -74,7 +74,7 @@ patch(CLIENT_MAIN, "float menu_active;", "// float menu_active;", "Entferne dopp
 MENU_CRED.write_text("void() Menu_Credits = { Menu_DrawBackground(); Menu_DrawTitle(\"CREDITS\"); Menu_DrawMapPanel(); sui_text([150, 100], MENU_TEXT_MEDIUM, \"Credits are currently disabled in this build.\", [1, 1, 1], 1, 0); Menu_Button(-1, \"cr_back\", \"BACK\", \"Return to Main Menu.\") ? current_menu = MENU_MAIN : 0; sui_pop_frame(); };", encoding="utf-8")
 
 # ==========================================
-# TEIL 1: SERVER-BROWSER GAMEPAD NAVIGATION
+# TEIL 1: SERVER-BROWSER GAMEPAD NAVIGATION (Unverändert)
 # ==========================================
 patch(MENU_COOP, "int num_cached_servers;", "int num_cached_servers;\nfloat coop_browse_selected;", "A1: Variable coop_browse_selected", "float coop_browse_selected;")
 patch(MENU_COOP, "void() Menu_Coop_Browse =\n{\n\tMenu_Coop_UpdateCache();", 
@@ -125,7 +125,7 @@ patch(SUI_SYS, "void() _sui_menukey_enter =\n{\n\tif (_hover_actions[0] == \"\")
       "D: enter auf Container", "Menu_Coop_Browse_EnterContainer())")
 
 # ==========================================
-# TEIL 1.5: FIX A/B Tausch
+# TEIL 1.5: FIX A/B Tausch (Unverändert)
 # ==========================================
 patch(
     SUI_SYS,
@@ -143,7 +143,7 @@ patch(
 )
 
 # ==========================================
-# TEIL 2: VIDEO-MENÜ & CUSTOM OPTIONEN
+# TEIL 2: VIDEO-MENÜ & CUSTOM OPTIONEN (Unverändert)
 # ==========================================
 content = MENU_MAIN_MENU.read_text(encoding="utf-8")
 content = content.replace("50 + (order * 25)", "50 + (order * 20)")
@@ -316,7 +316,7 @@ force_replace_regex(
 patch(MAIN_QC, 'build_datetime = fgets(file);', 'build_datetime = "M9 Pro Custom Build";\n        // build_datetime = fgets(file);', "Custom Version String im Menü", "M9 Pro Custom Build")
 
 # ==========================================
-# TEIL 3: ADVANCED PARTICLES
+# TEIL 3: ADVANCED PARTICLES (Unverändert)
 # ==========================================
 if (PARTICLES_DIR / "m9_spikeset.cfg").exists():
     (PARTICLES_DIR / "m9_spikeset.cfg").unlink()
@@ -331,7 +331,7 @@ patch(
 )
 
 # ==========================================
-# TEIL 4: CUSTOM HUD (KILL COUNTER)
+# TEIL 4: CUSTOM HUD (KILL COUNTER - Unverändert)
 # ==========================================
 patch(
     CLIENT_MAIN,
@@ -402,37 +402,63 @@ patch(
 )
 
 # ==========================================
-# TEIL 5: CLIENT-SIDE GORE MOD (KEIN SERVER-PATCH!)
+# TEIL 5: EXTREME CLIENT-SIDE GORE MOD V2
 # ==========================================
 
-# 1. Funktion zum Spawnen der Gore-Effekte in particles.qc
+# 1. verbessere Particles_RunParticle für massives Blut
+patch(
+    CLIENT_PARTICLES,
+    "void(float particle_type, vector position, float optional_field, float optional_entity) Particles_RunParticle =\n{",
+    """void(float particle_type, vector position, float optional_field, float optional_entity) Particles_RunParticle =
+{
+    // NZP-M9 EXTREME GORE: Dreifaches Blut + dynamisches Licht bei jedem Treffer
+    if (particle_type == CSQC_PART_BLOODIMPACT) {
+        pointparticles(particleeffectnum("blood.blood_particle"), position, '0 0 0', 1);
+        pointparticles(particleeffectnum("blood.blood_particle"), position + randomvec() * 12, '0 0 0', 1);
+        pointparticles(particleeffectnum("blood.blood_particle"), position + randomvec() * 12, '0 0 0', 1);
+        
+        // Kurzer roter Lichtblitz
+        dynamiclight_add(position, 150, '1 0 0');
+        return;
+    }
+    """,
+    "EXTREME GORE: 3x Blut + Licht bei Einschlag",
+    "// NZP-M9 EXTREME GORE: Dreifaches Blut"
+)
+
+# 2. Hitmarker Kill-Explosion (mit Traceline)
 gore_function = """
 
-// --- NZP-M9 CLIENT-SIDE GORE ---
+// --- NZP-M9 CLIENT-SIDE GORE V2 ---
 void() CSQC_SpawnClientGore =
 {
-    // Hole die Blickrichtung des Spielers
-    makevectors(getviewprop(VF_ANGLES));
+    // Hole Blickrichtung
     vector view_org = getviewprop(VF_ORIGIN);
+    vector view_ang = getviewprop(VF_ANGLES);
+    makevectors(view_ang);
     
-    // Spawne die Partikel 100 Units in Blickrichtung (mitten ins Gesicht des Zombies)
-    vector hit_pos = view_org + v_forward * 100;
-
-    // Spawne Blut-Partikel (mehrfach für den Extreme-Effekt)
-    for (int i = 0; i < 3; i++) {
-        Particles_RunParticle(CSQC_PART_BLOODIMPACT, hit_pos + (v_right * (random()*10-5)) + (v_up * (random()*10-5)), 0, 0);
-    }
+    // Mache einen unsichtbaren Laser geradeaus (um den Zombie zu treffen)
+    traceline(view_org, view_org + v_forward * 2048, MOVE_HITMODEL, world);
     
-    // Wenn es ein Kill war, spawne Gibs
-    if (hitmark_type == 1) {
-        Particles_RunParticle(CSQC_PART_ZOMBIEGIB, hit_pos, 0, 0);
-        Particles_RunParticle(CSQC_PART_ZOMBIEGIB, hit_pos + (v_forward * 20), 0, 0);
+    if (trace_fraction < 1) {
+        vector hit_pos = trace_endpos;
+        
+        // Wenn es ein KILL war (roter Hitmarker)
+        if (hitmark_type == 1) {
+            // Explodiere in Fleischstücke
+            pointparticles(particleeffectnum("blood.gibs"), hit_pos, '0 0 0', 1);
+            pointparticles(particleeffectnum("blood.gibs"), hit_pos + '0 0 15', '0 0 0', 1);
+            pointparticles(particleeffectnum("blood.blood_particle"), hit_pos + randomvec()*20, '0 0 0', 1);
+            
+            // Riesiger roter Lichtblitz für den Kill
+            dynamiclight_add(hit_pos, 300, '1 0 0');
+        }
     }
 };
 """
-append_safe(CLIENT_PARTICLES, gore_function, "Füge Client-Gore-Funktion zu particles.qc hinzu", "CSQC_SpawnClientGore")
+append_safe(CLIENT_PARTICLES, gore_function, "Füge V2 Client-Gore-Funktion zu particles.qc hinzu", "CSQC_SpawnClientGore")
 
-# 2. Trigger in CSQC_Parse_Event einbauen (direkt nachdem der Hitmarker gesetzt wurde)
+# 3. Trigger in CSQC_Parse_Event einbauen
 patch(
     CLIENT_MAIN,
     'hitmark_type = var_1;\n\t\t\t\t\t\n\t\t\t\t\t// NZP-M9 Damage Numbers Trigger',
@@ -441,7 +467,7 @@ patch(
     "CSQC_SpawnClientGore();"
 )
 
-# 3. Forward-Deklaration in main.qc
+# 4. Forward-Deklaration in main.qc
 patch(
     CLIENT_MAIN,
     "noref void() CSQC_WorldLoaded =",
