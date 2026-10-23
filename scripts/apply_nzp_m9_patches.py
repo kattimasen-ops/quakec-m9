@@ -67,7 +67,6 @@ MENU_VIDE = BASE / "menu_vide.qc"
 CLIENT_MAIN = CLIENT / "main.qc"
 FTE_QC = CLIENT / "defs/fte.qc"
 MENU_DEFS = BASE / "defs/menu_defs.qc"
-MENU_MAIN = BASE / "main.qc"
 
 # ==========================================
 # TEIL 0: FEHLENDE DEKLARATIONEN & BUILTINS
@@ -80,17 +79,9 @@ ensure_line(FTE_QC, "void(float dest) setkeydest = #602;", "Füge setkeydest Bui
 menu_defs_injection = """
 // --- NZP-M9 Forward Declarations ---
 void(float wantmode) m_toggle;
-void(vector screensize, float notmenu) m_drawloading;
 // -----------------------------------
 """
 append_safe(MENU_DEFS, menu_defs_injection, "Füge menu_defs.qc Forward-Declarations hinzu", "NZP-M9 Forward Declarations")
-
-menu_main_injection = """
-// --- NZP-M9: Dummy-Implementierung für m_drawloading ---
-void(vector screensize, float notmenu) m_drawloading = { };
-// ------------------------------------------------------
-"""
-append_safe(MENU_MAIN, menu_main_injection, "Füge m_drawloading Definition in menu/main.qc hinzu", "NZP-M9 m_drawloading Definition")
 
 patch(
     CLIENT_MAIN,
@@ -146,13 +137,11 @@ string(string cur, float direction) Menu_Coop_Browse_Navigate =
 	if (direction > 0) {
 		if (is_in_list) {
 			if (!is_row) {
-				// Auf dem Container -> Springe in die erste Zeile
 				if (num_cached_servers > 0) {
 					coop_browse_selected = 0;
 					return "cbm_serverlistscrl0";
 				}
 			} else {
-				// In der Liste -> Springe zur nächsten Zeile
 				if (coop_browse_selected + 1 >= num_cached_servers) {
 					coop_browse_selected = -1;
 					return "cbm_refresh";
@@ -165,7 +154,6 @@ string(string cur, float direction) Menu_Coop_Browse_Navigate =
 	}
 	if (direction < 0) {
 		if (is_in_list && is_row) {
-			// In der Liste -> Springe zur vorherigen Zeile
 			if (coop_browse_selected - 1 < 0) {
 				coop_browse_selected = -1;
 				return "cbm_serverlist";
