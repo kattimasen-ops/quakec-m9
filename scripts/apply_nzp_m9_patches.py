@@ -12,8 +12,6 @@ def patch(path: Path, anchor: str, replacement: str, description: str, marker: s
     if anchor in content:
         path.write_text(content.replace(anchor, replacement, 1), encoding="utf-8")
         print(f"[OK]   {description}")
-    else:
-        print(f"[WARN] {description}: Anker nicht gefunden.")
 
 def force_replace_regex(path: Path, pattern: str, replacement: str, description: str):
     if not path.exists(): sys.exit(1)
@@ -71,7 +69,7 @@ ensure_line(MENU_DEFS, "float last_input_deviceid;", "Füge last_input_deviceid 
 ensure_line(MENU_DEFS, "void(float wantmode) m_toggle;", "Füge m_toggle Deklaration hinzu")
 append_safe(MENU_DEFS, "\n#ifndef MENU\nvoid() Menu_DrawMapPreview = { };\n#endif\n", "Füge menu_defs.qc Dummy hinzu", "void() Menu_DrawMapPreview = { };")
 
-# WICHTIG: Variablen in custom.qc deklarieren (falls sie fehlen)
+# Zusätzliche Variablen für Kill-Streak-Dedupe und Blut-Multiplikator
 if CUSTOM_QC.exists():
     custom_additions = """
 // --- NZP-M9 CUSTOM ADDITIONS ---
@@ -79,6 +77,7 @@ float dmg_text_time;
 string dmg_text_str;
 float gore_enabled;
 float gore_kill_light;
+float gore_blood_count;
 float dmg_indicator_alpha;
 float dmg_last_health;
 float screen_shake_intensity;
@@ -87,9 +86,10 @@ float fov_punch_time;
 float kill_streak_count;
 float kill_streak_reset_time;
 float kill_streak_display_time;
+float kill_streak_last_time;
 string kill_streak_text;
 """
-    append_safe(CUSTOM_QC, custom_additions, "Füge Variablen zu custom.qc hinzu", "float kill_streak_count;")
+    append_safe(CUSTOM_QC, custom_additions, "Füge Variablen zu custom.qc hinzu", "float kill_streak_last_time;")
 
 patch(CLIENT_MAIN, "float menu_active;", "// float menu_active;", "Entferne doppelte menu_active Definition", "// float menu_active;")
 MENU_CRED.write_text("void() Menu_Credits = { Menu_DrawBackground(); Menu_DrawTitle(\"CREDITS\"); Menu_DrawMapPanel(); sui_text([150, 100], MENU_TEXT_MEDIUM, \"Credits are currently disabled in this build.\", [1, 1, 1], 1, 0); Menu_Button(-1, \"cr_back\", \"BACK\", \"Return to Main Menu.\") ? current_menu = MENU_MAIN : 0; sui_pop_frame(); };", encoding="utf-8")
@@ -170,16 +170,8 @@ content = content.replace("is_hovered ? [1, 0, 0] : [1, 1, 1]", "is_hovered ? [0
 content = content.replace("[0.4, 0, 0]", "[0.6, 0, 0.8]") 
 MENU_MAIN_MENU.write_text(content, encoding="utf-8")
 
-force_replace_regex(
-    MENU_VIDE,
-    r"string menu_video_buttons\[\d+\] = \{.*?\};",
-    'string menu_video_buttons[16] = {"vm_resol", "vm_fulls", "vm_shfps", "vm_maxps", "vm_vsync", "vm_fov", "vm_gamma", "vm_uwide", "vm_parts", "vm_decal", "vm_dynlgt", "vm_shdw", "vm_bob", "vm_filtr", "vm_apply", "vm_back"};',
-    "E1: Button-Array überschreiben"
-)
-force_replace_regex(
-    MENU_VIDE,
-    r"float current_selected_vidmode;.*?float current_filter;",
-    '''float current_selected_vidmode;
+force_replace_regex(MENU_VIDE, r"string menu_video_buttons\[\d+\] = \{.*?\};", 'string menu_video_buttons[16] = {"vm_resol", "vm_fulls", "vm_shfps", "vm_maxps", "vm_vsync", "vm_fov", "vm_gamma", "vm_uwide", "vm_parts", "vm_decal", "vm_dynlgt", "vm_shdw", "vm_bob", "vm_filtr", "vm_apply", "vm_back"};', "E1: Button-Array überschreiben")
+force_replace_regex(MENU_VIDE, r"float current_selected_vidmode;.*?float current_filter;", '''float current_selected_vidmode;
 float current_fullscreen;
 float current_showfps;
 float current_vsync;
@@ -189,13 +181,8 @@ float current_decals;
 float current_dynlight;
 float current_shadows;
 float current_bob;
-float current_filter;''',
-    "E2: Variablen überschreiben"
-)
-force_replace_regex(
-    MENU_VIDE,
-    r"void\(\) Menu_Video_StoreCurrentSettings =\s*\{.*?\}",
-    '''void() Menu_Video_StoreCurrentSettings =
+float current_filter;''', "E2: Variablen überschreiben")
+force_replace_regex(MENU_VIDE, r"void\(\) Menu_Video_StoreCurrentSettings =\s*\{.*?\}", '''void() Menu_Video_StoreCurrentSettings =
 {
     current_fullscreen = cvar("vid_fullscreen");
     current_showfps = cvar("show_fps");
@@ -207,9 +194,7 @@ force_replace_regex(
     current_shadows = cvar("r_shadows");
     current_bob = (cvar("cl_bobup") > 0);
     current_filter = (substring(strtoupper(cvar_string("gl_texturemode")), 0, 10) == "GL_NEAREST");
-}''',
-    "E3: StoreCurrentSettings überschreiben"
-)
+}''', "E3: StoreCurrentSettings überschreiben")
 if "Menu_Video_UpdateDynLight" not in MENU_VIDE.read_text(encoding="utf-8"):
     patch(MENU_VIDE, "void() Menu_Video_UpdateUltrawide =", '''void() Menu_Video_UpdateDecals = { Menu_PlaySound(MENU_SND_ENTER); current_decals = !current_decals; cvar_set("nzp_decals", ftos(current_decals)); };
 void() Menu_Video_UpdateDynLight = { Menu_PlaySound(MENU_SND_ENTER); current_dynlight = !current_dynlight; cvar_set("r_dynamic", ftos(current_dynlight)); };
@@ -226,14 +211,11 @@ void() Menu_Video =
     
     Menu_DrawBackground();
     Menu_DrawTitle("VIDEO OPTIONS");
-
     Menu_DrawMapPanel();
 
     Menu_Button(1, "vm_resol", "RESOLUTION", "Window size adjustment.") ? Menu_Video_UpdateVideoMode() : 0;
     if (current_selected_vidmode > menu_video_modes) current_selected_vidmode = 0;
-    string resolution_string = sprintf("%dx%d (%d:%d)", video_modes[current_selected_vidmode].size[0], 
-    video_modes[current_selected_vidmode].size[1], video_modes[current_selected_vidmode].ratio[0], 
-    video_modes[current_selected_vidmode].ratio[1]);
+    string resolution_string = sprintf("%dx%d (%d:%d)", video_modes[current_selected_vidmode].size[0], video_modes[current_selected_vidmode].size[1], video_modes[current_selected_vidmode].ratio[0], video_modes[current_selected_vidmode].ratio[1]);
     Menu_DrawOptionValue(1, resolution_string);
 
     Menu_Button(2, "vm_fulls", "FULLSCREEN", "Change Fullscreen Mode.") ? Menu_Video_UpdateFullscreen() : 0;
@@ -242,7 +224,6 @@ void() Menu_Video =
         case 0: fullscreen_string = "DISABLED"; break;
         case 1: fullscreen_string = "ENABLED"; break;
         case 2: fullscreen_string = "BORDERLESS"; break;
-        default: break;
     }
     Menu_DrawOptionValue(2, fullscreen_string);
 
@@ -252,7 +233,6 @@ void() Menu_Video =
         case 0: showfps_string = "DISABLED"; break;
         case 1: showfps_string = "ENABLED"; break;
         case 2: showfps_string = "VERBOSE"; break;
-        default: break;
     }
     Menu_DrawOptionValue(3, showfps_string);
 
@@ -260,10 +240,7 @@ void() Menu_Video =
     Menu_CvarSlider(4, "vm_maxps", [10, 500, 490], "cl_maxfps", true, false, false);
 
     Menu_Button(5, "vm_vsync", "VSYNC", "Sync Framerate with Display.") ? Menu_Video_UpdateVsync() : 0;
-    string vsync_string = "";
-    if (current_vsync) vsync_string = "ENABLED";
-    else vsync_string = "DISABLED";
-    Menu_DrawOptionValue(5, vsync_string);
+    Menu_DrawOptionValue(5, current_vsync ? "ENABLED" : "DISABLED");
 
     Menu_Button(6, "vm_fov", "FIELD OF VIEW", "Change Camera Field of View.") ? 0 : 0;
     Menu_CvarSlider(6, "vm_fov", [10, 150, 140], "fov", true, false, false);
@@ -272,49 +249,27 @@ void() Menu_Video =
     Menu_CvarSlider(7, "vm_gamma", [0.3, 2, 17], "gamma", false, true, false);
 
     Menu_Button(8, "vm_uwide", "ULTRAWIDE MODE", "Condenses HUD closer to center of Display.") ? Menu_Video_UpdateUltrawide() : 0;
-    string wide_string = "";
-    if (current_ultrawide) wide_string = "ENABLED";
-    else wide_string = "DISABLED";
-    Menu_DrawOptionValue(8, wide_string);
+    Menu_DrawOptionValue(8, current_ultrawide ? "ENABLED" : "DISABLED");
 
     Menu_Button(9, "vm_parts", "PARTICLES", "Toggle Particle Effects for Performance.") ? Menu_Video_UpdateParticles() : 0;
-    string part_string = "";
-    if (current_particles) part_string = "ENABLED";
-    else part_string = "DISABLED";
-    Menu_DrawOptionValue(9, part_string);
+    Menu_DrawOptionValue(9, current_particles ? "ENABLED" : "DISABLED");
 
     Menu_Button(10, "vm_decal", "DECALS", "Toggle Bullet Holes and Blood.") ? Menu_Video_UpdateDecals() : 0;
-    string decal_string = "";
-    if (current_decals) decal_string = "ENABLED";
-    else decal_string = "DISABLED";
-    Menu_DrawOptionValue(10, decal_string);
+    Menu_DrawOptionValue(10, current_decals ? "ENABLED" : "DISABLED");
 
     Menu_Button(11, "vm_dynlgt", "DYNAMIC LIGHTS", "Toggle Realtime Lights.") ? Menu_Video_UpdateDynLight() : 0;
-    string dynlgt_string = "";
-    if (current_dynlight) dynlgt_string = "ENABLED";
-    else dynlgt_string = "DISABLED";
-    Menu_DrawOptionValue(11, dynlgt_string);
+    Menu_DrawOptionValue(11, current_dynlight ? "ENABLED" : "DISABLED");
 
     Menu_Button(12, "vm_shdw", "SHADOWS", "Toggle Entity Shadows.") ? Menu_Video_UpdateShadows() : 0;
-    string shadows_string = "";
-    if (current_shadows) shadows_string = "ENABLED";
-    else shadows_string = "DISABLED";
-    Menu_DrawOptionValue(12, shadows_string);
+    Menu_DrawOptionValue(12, current_shadows ? "ENABLED" : "DISABLED");
 
     Menu_Button(13, "vm_bob", "WEAPON BOB", "Toggle Weapon Swaying.") ? Menu_Video_UpdateBob() : 0;
-    string bob_string = "";
-    if (current_bob) bob_string = "ENABLED";
-    else bob_string = "DISABLED";
-    Menu_DrawOptionValue(13, bob_string);
+    Menu_DrawOptionValue(13, current_bob ? "ENABLED" : "DISABLED");
 
     Menu_Button(14, "vm_filtr", "TEXTURE FILTERING", "Choose 3D Environment Filtering Mode.") ? Menu_Video_UpdateFiltering() : 0;
-    string filt_string = "";
-    if (current_filter) filt_string = "NEAREST";
-    else filt_string = "LINEAR";
-    Menu_DrawOptionValue(14, filt_string);
+    Menu_DrawOptionValue(14, current_filter ? "NEAREST" : "LINEAR");
 
     Menu_DrawDivider(14.25);
-    
     Menu_Button(15, "vm_apply", "APPLY", "Save & Apply Settings.") ? Menu_Video_ApplySettings() : 0;
     Menu_Button(16, "vm_back", "BACK", "Return to Configuration Menu.") ? current_menu = MENU_OPTIONS : 0;
 
@@ -324,9 +279,8 @@ force_replace_regex(MENU_VIDE, r"void\(\) Menu_Video\s*=\s*\{.*?\n\};", menu_vid
 patch(MAIN_QC, 'build_datetime = fgets(file);', 'build_datetime = "M9 Pro Custom Build";\n        // build_datetime = fgets(file);', "Custom Version String", "M9 Pro Custom Build")
 
 # ==========================================
-# TEIL 3: MAIN.QC - INITIALISIERUNG & LOGIK
+# TEIL 3: MAIN.QC - INITIALISIERUNG
 # ==========================================
-# 1. Initialisiere unsere Variablen in CSQC_Init
 patch(
     CLIENT_MAIN,
     "void(float apiver, string enginename, float enginever) CSQC_Init =\n{",
@@ -335,6 +289,7 @@ patch(
 	// NZP-M9 Initialisierungen
 	gore_enabled = 1;
 	gore_kill_light = 300;
+	gore_blood_count = 2;
 	dmg_text_time = 0;
 	dmg_text_str = "";
 	dmg_indicator_alpha = 0;
@@ -345,13 +300,16 @@ patch(
 	kill_streak_count = 0;
 	kill_streak_reset_time = 0;
 	kill_streak_display_time = 0;
+	kill_streak_last_time = 0;
 	kill_streak_text = "";
 """,
     "Initialisiere Variablen in CSQC_Init",
     "// NZP-M9 Initialisierungen"
 )
 
-# 2. Parse_Event für Gore, Hitmarker-Sound, FOV-Punch und Kill-Streaks
+# ==========================================
+# TEIL 4: CSQC_Parse_Event - Kills, Sound, Streak, FOV
+# ==========================================
 patch(
     CLIENT_MAIN,
     'case 3:\n\t\t\t\t\tif (hitmark_ignore_time > time)\n\t\t\t\t\t\treturn;\n\n\t\t\t\t\thitmark_type = var_1;',
@@ -361,36 +319,45 @@ patch(
 
 					hitmark_type = var_1;
 					
-					// NZP-M9 Hitmarker-Sound (mit Cooldown)
+					// NZP-M9 Hitmarker-Sound (Cooldown 0.1s gegen Spam)
 					if (time > hitmarker_sound_time) {
 						if (hitmark_type == 1) localsound_enhanced("sounds/zombie/headshot.wav", 0, 0.7);
 						else localsound_enhanced("sounds/weapons/knife/knife_hit.wav", 0, 0.5);
-						hitmarker_sound_time = time + 0.05;
+						hitmarker_sound_time = time + 0.1;
 					}
 					
 					// NZP-M9 FOV-Punch bei Schuss
 					fov_punch_time = time + 0.08;
 
-					// NZP-M9 Kill-Streak
+					// NZP-M9 Kill-Streak mit Deduplizierung
 					if (hitmark_type == 1) {
-						if (time > kill_streak_reset_time) kill_streak_count = 1;
-						else kill_streak_count += 1;
-						kill_streak_reset_time = time + 2.0;
-						
-						if (kill_streak_count == 2) { kill_streak_text = "DOUBLE KILL"; kill_streak_display_time = time + 2.0; }
-						else if (kill_streak_count == 3) { kill_streak_text = "TRIPLE KILL"; kill_streak_display_time = time + 2.0; }
-						else if (kill_streak_count >= 4) { kill_streak_text = "MULTI KILL!"; kill_streak_display_time = time + 2.0; }
+						if (time - kill_streak_last_time > 0.15) {
+							if (time > kill_streak_reset_time) kill_streak_count = 1;
+							else kill_streak_count += 1;
+							
+							kill_streak_last_time = time;
+							kill_streak_reset_time = time + 3.0;
+							
+							if (kill_streak_count == 2) { kill_streak_text = "DOUBLE KILL"; kill_streak_display_time = time + 2.5; }
+							else if (kill_streak_count == 3) { kill_streak_text = "TRIPLE KILL"; kill_streak_display_time = time + 2.5; }
+							else if (kill_streak_count >= 4) { kill_streak_text = "MULTI KILL!"; kill_streak_display_time = time + 2.5; }
+						}
 					}
+					
+					// NZP-M9 Client-Side Gore
+					CSQC_SpawnClientGore();
 					
 					// NZP-M9 Damage Numbers Trigger
 					if (hitmark_type == 1) dmg_text_str = "KILL";
 					else dmg_text_str = "HIT";
 					dmg_text_time = time + 0.8;""",
-    "CSQC_Parse_Event: Trigger Gore, Sound, Streak, FOV",
-    "kill_streak_text = \"DOUBLE KILL\";"
+    "CSQC_Parse_Event: Gore, Sound, Streak, FOV",
+    "kill_streak_last_time > 0.15"
 )
 
-# 3. Screen-Shake und FOV-Punch in CSQC_UpdateView (Kamera-Berechnung)
+# ==========================================
+# TEIL 5: CSQC_UpdateView - Kamera & HUD
+# ==========================================
 patch(
     CLIENT_MAIN,
     "\tCamera_AimSnap(camang);\n\n\tcamang[0] += cam_snap_difference[0];\n\tcamang[1] += cam_snap_difference[1];\n\tcamang[2] += cam_snap_difference[2];\n\n\tsetviewprop(VF_ANGLES, camang);",
@@ -420,7 +387,6 @@ patch(
     "// NZP-M9: Screen-Shake"
 )
 
-# 4. HUD-Rendering (Damage-Indicator, Kills, Streak, Damage-Numbers)
 patch(
     CLIENT_MAIN,
     "\tif (cvar(\"chase_active\")) {\n\t\tChase_Update();\n\t}\n\n\t//does what you think it does\n\trenderscene();",
@@ -433,7 +399,6 @@ patch(
 
 \t// --- NZP-M9 CUSTOM HUD ---
 	
-	// Damage-Indicator (Roter Rand bei HP-Verlust)
 	float current_health = getstatf(STAT_HEALTH);
 	if (current_health < dmg_last_health) {
 		dmg_indicator_alpha = 0.6;
@@ -451,13 +416,11 @@ patch(
 		drawfill([g_width - edge_size, edge_size], [edge_size, g_height - edge_size*2], [1, 0, 0], dmg_indicator_alpha, 0);
 	}
 	
-	// Screen-Shake abbauen
 	screen_shake_intensity -= frametime * 25;
 	if (screen_shake_intensity < 0) screen_shake_intensity = 0;
 	
 	if (serverkey("pausestate") != "1") {
 		sui_begin(g_width, g_height);
-		
 		sui_set_align([SUI_ALIGN_END, SUI_ALIGN_START]);
 		
 		float real_kills = 0;
@@ -493,22 +456,26 @@ patch(
 		
 		sui_end();
 	}""",
-    "CSQC_UpdateView: Custom HUD rendern",
+    "CSQC_UpdateView: Custom HUD",
     "--- NZP-M9 CUSTOM HUD ---"
 )
 
 # ==========================================
-# TEIL 4: PARTICLES.QC - GORE & SHAKE TRIGGER
+# TEIL 6: Particles.qc
 # ==========================================
-# 1. Partikel triggern Screen-Shake und Gore
 patch(
     CLIENT_PARTICLES,
     "void(float particle_type, vector position, float optional_field, float optional_entity) Particles_RunParticle =\n{",
     """void(float particle_type, vector position, float optional_field, float optional_entity) Particles_RunParticle =
 {
-    // NZP-M9: Roter Lichtblitz bei Blut
+    // NZP-M9: Roter Lichtblitz + zusätzliches Blut
     if (particle_type == CSQC_PART_BLOODIMPACT && gore_enabled) {
         dynamiclight_add(position, 150, '1 0 0');
+        if (gore_blood_count > 1) {
+            for (int i = 1; i < gore_blood_count; i++) {
+                pointparticles(particleeffectnum("blood.blood_particle"), position + randomvec() * 15, '0 0 0', 1);
+            }
+        }
     }
     
     // NZP-M9: Screen-Shake bei Explosionen
@@ -516,43 +483,33 @@ patch(
         screen_shake_intensity += 6;
     }
 """,
-    "Particles_RunParticle: Gore & Screen-Shake",
-    "// NZP-M9: Roter Lichtblitz bei Blut"
+    "Particles_RunParticle: Blut, Licht, Shake",
+    "// NZP-M9: Roter Lichtblitz + zusätzliches Blut"
 )
 
-# 2. Kill-Gibs explodieren lassen
+# CSQC_SpawnClientGore OHNE traceline (Bug-Fix!)
 gore_function = """
 
-// --- NZP-M9 CLIENT-SIDE GORE KILL EXPLOSION ---
+// --- NZP-M9 CLIENT-SIDE GORE KILL EXPLOSION (KEIN traceline!) ---
 void() CSQC_SpawnClientGore =
 {
     vector view_org = getviewprop(VF_ORIGIN);
     vector view_ang = getviewprop(VF_ANGLES);
     makevectors(view_ang);
     
-    traceline(view_org, view_org + v_forward * 2048, MOVE_HITMODEL, world);
+    // Position ~100 Units in Blickrichtung (mitten im Feind)
+    // WICHTIG: Kein traceline! Das würde globale trace_* Variablen überschreiben
+    // und die Server-Netzwerk-Nachricht desynchronisieren (Illegible server message).
+    vector hit_pos = view_org + v_forward * 100;
     
-    if (trace_fraction < 1) {
-        vector hit_pos = trace_endpos;
-        
-        if (hitmark_type == 1 && gore_enabled) {
-            pointparticles(particleeffectnum("blood.gibs"), hit_pos, '0 0 0', 1);
-            pointparticles(particleeffectnum("blood.gibs"), hit_pos + '0 0 15', '0 0 0', 1);
-            dynamiclight_add(hit_pos, gore_kill_light, '1 0 0');
-        }
+    if (hitmark_type == 1 && gore_enabled) {
+        pointparticles(particleeffectnum("blood.gibs"), hit_pos, '0 0 0', 1);
+        pointparticles(particleeffectnum("blood.gibs"), hit_pos + '0 0 15', '0 0 0', 1);
+        dynamiclight_add(hit_pos, gore_kill_light, '1 0 0');
     }
 };
 """
-append_safe(CLIENT_PARTICLES, gore_function, "Füge V2 Client-Gore-Funktion hinzu", "CSQC_SpawnClientGore")
-
-# 3. Trigger in CSQC_Parse_Event einbauen
-patch(
-    CLIENT_MAIN,
-    'hitmark_type = var_1;\n\t\t\t\t\t\n\t\t\t\t\t// NZP-M9 Hitmarker-Sound',
-    'hitmark_type = var_1;\n\t\t\t\t\t\n\t\t\t\t\t// NZP-M9 Client-Side Gore Trigger!\n\t\t\t\t\tCSQC_SpawnClientGore();\n\t\t\t\t\t\n\t\t\t\t\t// NZP-M9 Hitmarker-Sound',
-    "Trigger Client-Gore on Hitmarker",
-    "CSQC_SpawnClientGore();"
-)
+append_safe(CLIENT_PARTICLES, gore_function, "Füge Gore-Funktion hinzu (ohne traceline)", "CSQC_SpawnClientGore")
 
 patch(
     CLIENT_MAIN,
