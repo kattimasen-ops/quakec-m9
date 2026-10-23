@@ -352,23 +352,7 @@ patch(CLIENT_MAIN, "void(float apiver, string enginename, float enginever) CSQC_
 patch(CLIENT_MAIN, "noref void() CSQC_WorldLoaded =", "void() CSQC_SpawnClientGore;\n\nnoref void() CSQC_WorldLoaded =", "Forward-Deklaration für CSQC_SpawnClientGore", "void() CSQC_SpawnClientGore;")
 
 # ==========================================
-# TEIL 5: CSQC_Parse_Event – NUR return -> break (KEIN neuer Case)
-# ==========================================
-# Der Original-Code hat im case 3 (Hitmark) ein "return;".
-# Dieses wird durch "break;" ersetzt, damit die switch-Anweisung korrekt verlassen wird.
-# Es wird KEIN neuer CSQC_EVENT_HITMARK-Case eingefügt.
-HITMARK_ANCHOR = "case 3:\n\t\t\t\t\tif (hitmark_ignore_time > time)\n\t\t\t\t\t\treturn;\n\n\t\t\t\t\thitmark_type = var_1;"
-HITMARK_REPLACEMENT = """case 3:
-					if (hitmark_ignore_time > time)
-						break;
-
-					hitmark_type = var_1;"""
-patch(CLIENT_MAIN, HITMARK_ANCHOR, HITMARK_REPLACEMENT,
-      "CSQC_Parse_Event: return -> break (kein neuer Case)",
-      "hitmark_ignore_time > time)\n\t\t\t\t\t\tbreak;")
-
-# ==========================================
-# TEIL 6: ATMOSPHÄRE-FUNKTIONEN (additiv)
+# TEIL 5: ATMOSPHÄRE-FUNKTIONEN (additiv)
 # ==========================================
 ATMO_FUNCS = """
 // ==========================================
@@ -428,7 +412,7 @@ patch(CLIENT_MAIN, "noref void(float width, float height, float menushown) CSQC_
     "// NZP-M9: Atmosphäre & Nebel")
 
 # ==========================================
-# TEIL 7: HUD-BLOCK (additiv, nach renderscene)
+# TEIL 6: HUD-BLOCK (additiv, nach renderscene)
 # ==========================================
 HUD_ADDITION = """\t// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
 \tCSQC_UpdateAtmosphere();
