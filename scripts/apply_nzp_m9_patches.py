@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-# NZP-M9 Patches: Alle Features (HUD, HIT/KILL, Kill-Streak, Atmosphäre/Nebel,
-# Coop-Browser-Navigation, A/B-Switch, Video-Optionen)
-# Credits bleiben deaktiviert (Kurzversion) - offizielle menu_cred.qc referenziert
-# moeglicherweise fehlende Assets.
-# Gore-Effekte laufen unveraendert ueber das bestehende Partikelsystem.
-# Idempotent. WICHTIG: main.qc und sui_sys.qc muessen die offizielle Struktur haben.
+# NZP-M9 Patches: HUD, HIT/KILL, Kill-Streak, Atmosphaere/Nebel,
+# Coop-Browser-Navigation, A/B-Switch, Video-Optionen, Powerup-Runaway-Fix.
+# KEIN CSQC_Parse_Event-Patch mehr (verursachte "Bad server message").
+# Idempotent.
 
 import sys
 import re
@@ -36,6 +34,7 @@ def append_safe(path: Path, content: str, description: str, marker: str) -> None
 
 BASE = Path("source/menu")
 CLIENT = Path("source/client")
+SERVER = Path("source/server")
 MENU_COOP = BASE / "menu_coop.qc"
 SUI_SYS   = BASE / "sui_sys.qc"
 MENU_VIDE = BASE / "menu_vide.qc"
@@ -45,6 +44,7 @@ FTE_QC = CLIENT / "defs/fte.qc"
 MENU_DEFS = BASE / "defs/menu_defs.qc"
 MENU_CRED = BASE / "menu_cred.qc"
 CUSTOM_QC = CLIENT / "defs/custom.qc"
+POWERUPS_QC = SERVER / "entities/powerups.qc"
 
 # ==========================================
 # TEIL 0: BASIS & CUSTOM.QC
@@ -64,8 +64,6 @@ ensure_line(MENU_DEFS, "float last_input_deviceid;", "Füge last_input_deviceid 
 ensure_line(MENU_DEFS, "void(float wantmode) m_toggle;", "Füge m_toggle Deklaration hinzu")
 append_safe(MENU_DEFS, "\n#ifndef MENU\nvoid() Menu_DrawMapPreview = { };\n#endif\n", "Füge menu_defs.qc Dummy hinzu", "void() Menu_DrawMapPreview = { };")
 
-# Credits bleiben deaktiviert (Kurzversion), da die offizielle menu_cred.qc
-# Assets referenziert, die im Fork fehlen koennen. Idempotent ueber Marker.
 if MENU_CRED.exists():
     cred_content = MENU_CRED.read_text(encoding="utf-8")
     if "Credits are currently disabled" not in cred_content:
@@ -145,8 +143,6 @@ patch(MENU_COOP, "#undef PREVBUTTON_FUNC", "#undef PREVBUTTON_FUNC" + NAV_BLOCK,
 # ==========================================
 # TEIL 1c: SERVER-BROWSER HINWEIS AKTUALISIEREN
 # ==========================================
-# Der Original-Hinweis behauptet faelschlich, Gamepads seien nicht unterstuetzt.
-# Da A/B-Swap und D-Pad-Navigation gepatcht sind, stimmt das nicht mehr.
 patch(MENU_COOP,
     '"NOTE: Keyboard or gamepad is not supported for server selection."',
     '"NOTE: D-Pad UP/DOWN to scroll servers, B to select, A to go back."',
@@ -370,20 +366,7 @@ patch(CLIENT_MAIN, "void(float apiver, string enginename, float enginever) CSQC_
     "Initialisiere Variablen in CSQC_Init", "// NZP-M9 Initialisierungen")
 
 # ==========================================
-# TEIL 5: CSQC_Parse_Event – NUR return -> break
-# ==========================================
-HITMARK_ANCHOR = "case 3:\n\t\t\t\t\tif (hitmark_ignore_time > time)\n\t\t\t\t\t\treturn;\n\n\t\t\t\t\thitmark_type = var_1;"
-HITMARK_REPLACEMENT = """case 3:
-					if (hitmark_ignore_time > time)
-						break;
-
-					hitmark_type = var_1;"""
-patch(CLIENT_MAIN, HITMARK_ANCHOR, HITMARK_REPLACEMENT,
-      "CSQC_Parse_Event: return -> break (kein neuer Case)",
-      "hitmark_ignore_time > time)\n\t\t\t\t\t\tbreak;")
-
-# ==========================================
-# TEIL 6: ATMOSPHÄRE-FUNKTIONEN (additiv)
+# TEIL 5: ATMOSPHÄRE-FUNKTIONEN (additiv)
 # ==========================================
 ATMO_FUNCS = """
 // ==========================================
@@ -443,7 +426,7 @@ patch(CLIENT_MAIN, "noref void(float width, float height, float menushown) CSQC_
     "// NZP-M9: Atmosphäre & Nebel")
 
 # ==========================================
-# TEIL 7: HUD + HIT/KILL + KILL-STREAK (additiv)
+# TEIL 6: HUD + HIT/KILL + KILL-STREAK (additiv)
 # ==========================================
 HUD_ADDITION = """\t// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
 \tCSQC_UpdateAtmosphere();
@@ -565,6 +548,79 @@ patch(CLIENT_MAIN, "\t//does what you think it does\n\trenderscene();",
     HUD_ADDITION,
     "HUD-Block inkl. HIT/KILL + Kill-Streak nach renderscene() einfügen",
     "--- NZP-M9 CUSTOM HUD ---")
+
+# ==========================================
+# TEIL 7: POWERUPS.QC – RUNaway-LOOP-FIX (deterministisch)
+# ==========================================
+RUNAWAY_ANCHOR = """float perk_to_give = 0;
+	float found_perk_for_player = false;
+	while(!found_perk_for_player) {
+		float perk_rand = random();
+		if (perk_rand < (1/8) && (perks_can_give & P_REVIVE)) {
+			self.sequence = 1;
+			perk_to_give = P_REVIVE;
+		} else if (perk_rand < (2/8) && (perks_can_give & P_JUG)) {
+			self.sequence = 2;
+			perk_to_give = P_JUG;
+		} else if (perk_rand < (3/8) && (perks_can_give & P_SPEED)) {
+			self.sequence = 3;
+			perk_to_give = P_SPEED;
+		} else if (perk_rand < (4/8) && (perks_can_give & P_DOUBLE)) {
+			self.has_doubletap_damage_buff = true;
+			self.sequence = 4;
+			perk_to_give = P_DOUBLE;
+		} else if (perk_rand < (5/8) && (perks_can_give & P_STAMIN)) {
+			self.sequence = 5;
+			perk_to_give = P_STAMIN;
+		} else if (perk_rand < (6/8) && (perks_can_give & P_FLOP)) {
+			self.sequence = 6;
+			perk_to_give = P_FLOP;
+		} else if (perk_rand < (7/8) && (perks_can_give & P_DEAD)) {
+			self.sequence = 7;
+			perk_to_give = P_DEAD;
+		} else if ((perks_can_give & P_MULE)) {
+			self.sequence = 8;
+			perk_to_give = P_MULE;
+		}
+		if (perk_to_give != 0) found_perk_for_player = true;
+	}"""
+
+RUNAWAY_REPLACEMENT = """float perk_to_give = 0;
+
+	// NZP-M9 FIX: Deterministische Perk-Auswahl ohne while-Schleife.
+	// Verhindert runaway loop error, wenn random() keinen gueltigen Perk trifft.
+	float perk_roll = random() * 8;
+	float perk_index = floor(perk_roll);
+	if (perk_index >= 8) perk_index = 7;
+
+	if (perk_index == 0 && (perks_can_give & P_REVIVE)) {
+		self.sequence = 1; perk_to_give = P_REVIVE;
+	} else if (perk_index == 1 && (perks_can_give & P_JUG)) {
+		self.sequence = 2; perk_to_give = P_JUG;
+	} else if (perk_index == 2 && (perks_can_give & P_SPEED)) {
+		self.sequence = 3; perk_to_give = P_SPEED;
+	} else if (perk_index == 3 && (perks_can_give & P_DOUBLE)) {
+		self.has_doubletap_damage_buff = true; self.sequence = 4; perk_to_give = P_DOUBLE;
+	} else if (perk_index == 4 && (perks_can_give & P_STAMIN)) {
+		self.sequence = 5; perk_to_give = P_STAMIN;
+	} else if (perk_index == 5 && (perks_can_give & P_FLOP)) {
+		self.sequence = 6; perk_to_give = P_FLOP;
+	} else if (perk_index == 6 && (perks_can_give & P_DEAD)) {
+		self.sequence = 7; perk_to_give = P_DEAD;
+	} else if (perk_index == 7 && (perks_can_give & P_MULE)) {
+		self.sequence = 8; perk_to_give = P_MULE;
+	}
+
+	// Fallback: Kein Perk gefunden -> Punkte vergeben.
+	if (perk_to_give == 0) {
+		Player_AddScore(players, game_modifiers.gameplay.powerups.powerup_free_perk.awarded_score_if_no_perk_obtained, true);
+		players = find(players, classname, "player");
+		continue;
+	}"""
+
+patch(POWERUPS_QC, RUNAWAY_ANCHOR, RUNAWAY_REPLACEMENT,
+      "Powerups: Runaway-Loop deterministisch beheben",
+      "NZP-M9 FIX: Deterministische Perk-Auswahl ohne while-Schleife")
 
 print("\n=== Alle Patches erfolgreich angewendet (idempotent). ===")
 sys.exit(0)
