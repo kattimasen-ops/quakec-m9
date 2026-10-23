@@ -77,12 +77,15 @@ ensure_line(FTE_QC, ".float is_in_menu;", "Füge is_in_menu Feld hinzu")
 ensure_line(FTE_QC, "void(string soundname, float channel, float volume) localsound_enhanced = { localsound(soundname, channel, volume); };", "Füge localsound_enhanced Wrapper hinzu")
 ensure_line(FTE_QC, "void(float dest) setkeydest = #602;", "Füge setkeydest Builtin hinzu")
 
+# WICHTIG: Fehlende Variablen und Funktionen für das In-Game-Menü hinzufügen
 menu_defs_injection = """
-// --- NZP-M9 Forward Declarations ---
+// --- NZP-M9 Forward Declarations & Missing Variables ---
 void(float wantmode) m_toggle;
-// -----------------------------------
+float last_input_deviceid; 
+void() Menu_DrawMapPreview = { };
+// -----------------------------------------------------
 """
-append_safe(MENU_DEFS, menu_defs_injection, "Füge menu_defs.qc Forward-Declarations hinzu", "NZP-M9 Forward Declarations")
+append_safe(MENU_DEFS, menu_defs_injection, "Füge menu_defs.qc fehlende Variablen hinzu", "NZP-M9 Forward Declarations")
 
 patch(
     CLIENT_MAIN,
@@ -105,7 +108,6 @@ void() Menu_Credits =
     sui_pop_frame();
 };
 """
-# Wir überschreiben die Datei komplett, um Endlosschleifen der Original-Datei zu vermeiden
 MENU_CRED.write_text(cred_safe, encoding="utf-8")
 print("[OK]   menu_cred.qc durch sichere Version ersetzt (verhindert Freeze)")
 
