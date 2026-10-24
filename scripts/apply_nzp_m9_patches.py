@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
-# NZP-M9 Patches: HUD, HIT/KILL, Kill-Streak, Atmosphaere/Nebel,
-# Coop-Browser-Navigation, A/B-Switch, Video-Optionen,
-# POWERUPTOAST-Fix, Powerup-Runaway-Fix.
-# Idempotent. Credits bleiben deaktiviert.
+# NZP-M9 Patches – korrigierte Reihenfolge der Forward-Deklarationen.
+# Idempotent. main.qc und sui_sys.qc muessen im offiziellen Zustand sein.
 
 import sys
 import re
@@ -19,8 +17,6 @@ def patch(path: Path, anchor: str, replacement: str, description: str, marker: s
         print(f"[WARN] {description}: Anker nicht gefunden.")
 
 def patch_regex(path: Path, pattern: str, replacement: str, description: str, marker: str) -> None:
-    """Regex-basierter Patch mit Whitespace-Toleranz. Fuegt 'replacement' an der
-    Stelle ein, die 'pattern' matcht. Verwendet \\1 als Backreference."""
     if not path.exists(): return
     content = path.read_text(encoding="utf-8")
     if marker in content: return
@@ -77,7 +73,7 @@ ensure_line(MENU_DEFS, "float last_input_deviceid;", "Füge last_input_deviceid 
 ensure_line(MENU_DEFS, "void(float wantmode) m_toggle;", "Füge m_toggle Deklaration hinzu")
 append_safe(MENU_DEFS, "\n#ifndef MENU\nvoid() Menu_DrawMapPreview = { };\n#endif\n", "Füge menu_defs.qc Dummy hinzu", "void() Menu_DrawMapPreview = { };")
 
-# Credits bleiben deaktiviert (Kurzversion)
+# Credits deaktiviert (Kurzversion)
 if MENU_CRED.exists():
     cred_content = MENU_CRED.read_text(encoding="utf-8")
     if "Credits are currently disabled" not in cred_content:
@@ -154,9 +150,6 @@ float() Menu_Coop_Browse_EnterContainer = { if (num_cached_servers <= 0) return 
 """
 patch(MENU_COOP, "#undef PREVBUTTON_FUNC", "#undef PREVBUTTON_FUNC" + NAV_BLOCK, "B: Navigate- + EnterContainer-Funktionen", "Menu_Coop_Browse_Navigate")
 
-# ==========================================
-# TEIL 1c: SERVER-BROWSER HINWEIS AKTUALISIEREN
-# ==========================================
 patch(MENU_COOP,
     '"NOTE: Keyboard or gamepad is not supported for server selection."',
     '"NOTE: D-Pad UP/DOWN to scroll servers, B to select, A to go back."',
@@ -164,21 +157,23 @@ patch(MENU_COOP,
     "D-Pad UP/DOWN to scroll servers")
 
 # ==========================================
-# TEIL 2: SUI_SYS.QC – NAVIGATION & A/B-SWITCH (Regex-basiert)
+# TEIL 2: SUI_SYS.QC – Forward-Deklarationen VOR den Handlern
 # ==========================================
-SUI_FORWARD = """
-
-// ==========================================
+# WICHTIG: Die Deklarationen muessen VOR _sui_menukey_downarrow stehen,
+# nicht am Dateiende. Wir fuegen sie direkt vor dem Handler ein.
+SUI_FORWARD_ANCHOR = "void() _sui_menukey_downarrow ="
+SUI_FORWARD_REPLACEMENT = """// ==========================================
 // NZP-M9: Forward-Deklarationen für Coop-Browser-Navigation
 // ==========================================
 string(string cur, float direction) Menu_Coop_Browse_Navigate;
 float() Menu_Coop_Browse_EnterContainer;
-"""
-append_safe(SUI_SYS, SUI_FORWARD, "SUI: Forward-Deklarationen am Dateiende", "// NZP-M9: Forward-Deklarationen für Coop-Browser-Navigation")
 
-# Regex-basierter Anker: toleriert beliebigen Whitespace zwischen Funktionskopf,
-# Variablendeklaration und switch. Fuegt den Coop-Browser-Block direkt nach
-# "string current_hovered_option = _hover_actions[0];" ein.
+void() _sui_menukey_downarrow ="""
+patch(SUI_SYS, SUI_FORWARD_ANCHOR, SUI_FORWARD_REPLACEMENT,
+      "SUI: Forward-Deklarationen VOR den Tastenhandlern einfügen",
+      "Forward-Deklarationen für Coop-Browser-Navigation")
+
+# Downarrow erweitern
 DOWNARROW_PATTERN = r'(void\s*\(\s*\)\s*_sui_menukey_downarrow\s*=\s*\{[\s\S]*?string\s+current_hovered_option\s*=\s*_hover_actions\s*\[\s*0\s*\]\s*;)'
 DOWNARROW_REPLACEMENT = r'''\1
 	if (current_menu == MENU_COOPBROWSE) {
@@ -186,9 +181,10 @@ DOWNARROW_REPLACEMENT = r'''\1
 		if (nav != "") { _hover_actions[0] = nav; last_hovered_id = ""; _hover_action_count = 1; return; }
 	}'''
 patch_regex(SUI_SYS, DOWNARROW_PATTERN, DOWNARROW_REPLACEMENT,
-      "C2: Downarrow um Coop-Browser-Navigation erweitern (Regex)",
+      "C2: Downarrow um Coop-Browser-Navigation erweitern",
       "Menu_Coop_Browse_Navigate(current_hovered_option, 1)")
 
+# Uparrow erweitern
 UPARROW_PATTERN = r'(void\s*\(\s*\)\s*_sui_menukey_uparrow\s*=\s*\{[\s\S]*?string\s+current_hovered_option\s*=\s*_hover_actions\s*\[\s*0\s*\]\s*;)'
 UPARROW_REPLACEMENT = r'''\1
 	if (current_menu == MENU_COOPBROWSE) {
@@ -196,20 +192,20 @@ UPARROW_REPLACEMENT = r'''\1
 		if (nav != "") { _hover_actions[0] = nav; last_hovered_id = ""; _hover_action_count = 1; return; }
 	}'''
 patch_regex(SUI_SYS, UPARROW_PATTERN, UPARROW_REPLACEMENT,
-      "C3: Uparrow um Coop-Browser-Navigation erweitern (Regex)",
+      "C3: Uparrow um Coop-Browser-Navigation erweitern",
       "Menu_Coop_Browse_Navigate(current_hovered_option, -1)")
 
-# Enter-Handler: fuegt Container-Enter-Logik hinzu
+# Enter-Handler erweitern
 ENTER_PATTERN = r'(void\s*\(\s*\)\s*_sui_menukey_enter\s*=\s*\{[\s\S]*?if\s*\(\s*_hover_actions\s*\[\s*0\s*\]\s*==\s*""\s*\)[\s\S]*?_sui_menukey_downarrow\s*\(\s*\)\s*;)'
 ENTER_REPLACEMENT = r'''\1
 	if (current_menu == MENU_COOPBROWSE && _hover_actions[0] == "cbm_serverlist") {
 		if (Menu_Coop_Browse_EnterContainer()) _hover_actions[0] = "cbm_serverlistscrl0";
 	}'''
 patch_regex(SUI_SYS, ENTER_PATTERN, ENTER_REPLACEMENT,
-      "D: Enter um Container-Enter erweitern (Regex)",
+      "D: Enter um Container-Enter erweitern",
       "Menu_Coop_Browse_EnterContainer())")
 
-# A/B-Swap: Regex-basiert, damit Whitespace-Variationen toleriert werden
+# A/B-Swap
 AB_PATTERN = r'(float\s*\(\s*float\s+evtype\s*,\s*float\s+scanx\s*,\s*float\s+chary\s*,\s*float\s+devid\s*\)\s*sui_input_event\s*=\s*\{)'
 AB_REPLACEMENT = r'''\1
 	if (evtype == IE_KEYDOWN || evtype == IE_KEYUP) {
@@ -373,11 +369,8 @@ patch(CLIENT_MAIN, "void(float apiver, string enginename, float enginever) CSQC_
     "Initialisiere Variablen in CSQC_Init", "// NZP-M9 Initialisierungen")
 
 # ==========================================
-# TEIL 5: CSQC_Parse_Event – POWERUPTOAST-Case hinzufügen
+# TEIL 5: CSQC_Parse_Event – POWERUPTOAST
 # ==========================================
-# Der Server sendet beim Einsammeln eines Power-ups CSQC_EVENT_POWERUPTOAST.
-# Der Client muss den String lesen, sonst kommt es zu "Bad server message".
-# Regex-basierter Anker: fuegt nach dem BROADCASTMESSAGE-Case ein.
 PARSE_PATTERN = r'(case\s+CSQC_EVENT_BROADCASTMESSAGE\s*:\s*broadcast_type\s*=\s*readbyte\s*\(\s*\)\s*;\s*broadcast_time\s*=\s*time\s*\+\s*5\s*;\s*broadcast_num\s*=\s*readbyte\s*\(\s*\)\s*;\s*break\s*;)'
 PARSE_REPLACEMENT = r'''\1
 		case CSQC_EVENT_POWERUPTOAST:
@@ -386,11 +379,11 @@ PARSE_REPLACEMENT = r'''\1
 			hud_toast_endtime = time + 3;
 			break;'''
 patch_regex(CLIENT_MAIN, PARSE_PATTERN, PARSE_REPLACEMENT,
-    "CSQC_Parse_Event: POWERUPTOAST-Case hinzufügen (Fix für Bad server message)",
+    "CSQC_Parse_Event: POWERUPTOAST-Case hinzufügen",
     "case CSQC_EVENT_POWERUPTOAST:")
 
 # ==========================================
-# TEIL 6: ATMOSPHÄRE-FUNKTIONEN (additiv)
+# TEIL 6: ATMOSPHÄRE-FUNKTIONEN (VOR CSQC_UpdateView)
 # ==========================================
 ATMO_FUNCS = """
 // ==========================================
@@ -442,15 +435,14 @@ void() CSQC_UpdateAtmosphere =
 	}
 };
 
-// ==========================================
 """
 patch(CLIENT_MAIN, "noref void(float width, float height, float menushown) CSQC_UpdateView =",
     ATMO_FUNCS + "noref void(float width, float height, float menushown) CSQC_UpdateView =",
     "Atmosphäre-Funktionen vor CSQC_UpdateView einfügen",
-    "// NZP-M9: Atmosphäre & Nebel")
+    "float() CSQC_IsIndoor =")
 
 # ==========================================
-# TEIL 7: HUD + HIT/KILL + KILL-STREAK (additiv)
+# TEIL 7: HUD + HIT/KILL + KILL-STREAK + TOAST
 # ==========================================
 HUD_ADDITION = """	// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
 	CSQC_UpdateAtmosphere();
@@ -460,14 +452,12 @@ HUD_ADDITION = """	// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
 
 	// --- NZP-M9 CUSTOM HUD ---
 
-	// HIT/KILL-Text basierend auf vorhandenen Hitmarkern
 	if (time < hitmark_time) {
 		if (hitmark_type == 1) dmg_text_str = "KILL";
 		else dmg_text_str = "HIT";
 		dmg_text_time = time + 0.8;
 	}
 
-	// Kill-Streak-Logik (nur bei Kills, dedupliziert)
 	if (hitmark_type == 1 && time < hitmark_time) {
 		if (time - kill_streak_last_time > 0.5) {
 			if (time > kill_streak_reset_time) kill_streak_count = 1;
@@ -511,7 +501,6 @@ HUD_ADDITION = """	// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
 		}
 	}
 
-	// Ambient Dust (nur im Außenbereich)
 	if (!nzp_last_indoor_state && time > ambient_dust_time && cvar("nzp_particles")) {
 		ambient_dust_time = time + 0.1;
 		vector view_ang = getviewprop(VF_ANGLES);
@@ -566,7 +555,6 @@ HUD_ADDITION = """	// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
 			sui_text([0, -120], MENU_TEXT_LARGE, kill_streak_text, [1, 0.5, 0], 1, 0);
 		}
 
-		// Power-Up Toast (Fix für POWERUPTOAST)
 		if (time < hud_toast_endtime && hud_toast_string != "") {
 			float toast_alpha = 1;
 			if (hud_toast_endtime - time < 1) toast_alpha = hud_toast_endtime - time;
@@ -589,9 +577,6 @@ RUNAWAY_PATTERN = r'(float\s+perk_to_give\s*=\s*0;\s*float\s+found_perk_for_play
 
 RUNAWAY_REPLACEMENT = """float perk_to_give = 0;
 
-		// NZP-M9 FIX: Deterministische, uniforme Auswahl aus den verfuegbaren
-		// Perks. Die frueher verwendete while-Schleife konnte endlos laufen
-		// ("runaway loop error"). perks_can_give ist hier garantiert > 0.
 		float num_avail = 0;
 		if (perks_can_give & P_REVIVE) num_avail++;
 		if (perks_can_give & P_JUG) num_avail++;
@@ -617,8 +602,8 @@ RUNAWAY_REPLACEMENT = """float perk_to_give = 0;
 		if (perks_can_give & P_MULE)   { if (current == pick) { self.sequence = 8; perk_to_give = P_MULE; }   current++; }"""
 
 patch_regex(POWERUPS_QC, RUNAWAY_PATTERN, RUNAWAY_REPLACEMENT,
-    "Powerups: Runaway-Loop deterministisch beheben (Regex)",
-    "NZP-M9 FIX: Deterministische")
+    "Powerups: Runaway-Loop deterministisch beheben",
+    "NZP-M9 FIX: Deterministische Perk-Auswahl")
 
 print("\n=== Alle Patches erfolgreich angewendet (idempotent). ===")
 sys.exit(0)
