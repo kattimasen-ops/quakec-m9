@@ -720,6 +720,12 @@ void() PU_MaxAmmo =
 		if (!players.downed) {
 			// Fill all weapons
 			for (float i = 0; i < MAX_PLAYER_WEAPONS; i++) {
+				// NZP-M9 FIX: Skip empty weapon slots. getWeaponAmmo(0) and
+				// getWeaponMag(0) may return invalid data or crash depending
+				// on the weapon definition table.
+				if (players.weapons[i].weapon_id == 0)
+					continue;
+
 				players.weapons[i].weapon_reserve = getWeaponAmmo(players.weapons[i].weapon_id);
 
 				// Some game configurations support also filling the magazine..
@@ -738,7 +744,11 @@ void() PU_MaxAmmo =
 		} else {
 			// Reset shots fired, fill 2 mags into reserve.
 			players.teslacount = 0;
-			players.weapons[0].weapon_reserve = getWeaponMag(players.weapon) * 2;
+			// NZP-M9 FIX: Validate that the held weapon has a magazine
+			// definition before calling getWeaponMag. Otherwise a knife
+			// or other mag-less weapon can crash the server.
+			if (players.weapon > 0)
+				players.weapons[0].weapon_reserve = getWeaponMag(players.weapon) * 2;
 		}	
 
 		// Force the player to reload if their mag is empty
