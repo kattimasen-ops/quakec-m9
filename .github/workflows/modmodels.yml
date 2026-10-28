@@ -40,24 +40,24 @@ jobs:
       - name: Install MD3 Export Add-on
         run: |
           set -euo pipefail
-          # Add-on von GitHub klonen
           git clone --depth 1 https://github.com/neumond/blender-md3.git /tmp/blender-md3
-
-          # Add-on in Blender-Add-ons-Ordner kopieren
-          # Der Pfad für Blender 4.5.x ist: ~/.config/blender/4.5/scripts/addons/
           ADDON_DIR="$HOME/.config/blender/4.5/scripts/addons"
           mkdir -p "$ADDON_DIR"
           cp -r /tmp/blender-md3/io_scene_md3 "$ADDON_DIR/"
-
           echo "Add-on installiert in: $ADDON_DIR"
-          ls -la "$ADDON_DIR"
+
+      - name: Prepare Output Directory
+        run: |
+          set -euo pipefail
+          mkdir -p "${{ github.workspace }}/output_models"
+          echo "Ausgabeordner: ${{ github.workspace }}/output_models"
 
       - name: Run Blender Python Script
         run: |
           set -euo pipefail
-          # Blender ist jetzt im PATH verfügbar
           blender -b source_assets/zombie_mesh.blend \
-            --python scripts/blender_split_export.py -- /workspace/output_models
+            --python scripts/blender_split_export.py -- \
+            "${{ github.workspace }}/output_models"
 
       - name: Upload MD3 Artifacts
         uses: actions/upload-artifact@v4
