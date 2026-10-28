@@ -198,20 +198,16 @@ void() Menu_Video = {
 	Menu_DrawTitle("VIDEO OPTIONS");
 	Menu_DrawMapPanel();
 
-	// Resolution
 	Menu_Button(1, "vm_resol", "RESOLUTION", "Window size adjustment.") ? Menu_Video_UpdateVideoMode() : 0;
 	if (current_selected_vidmode > menu_video_modes) current_selected_vidmode = 0;
 	Menu_DrawOptionValue(1, sprintf("%dx%d (%d:%d)", video_modes[current_selected_vidmode].size[0], video_modes[current_selected_vidmode].size[1], video_modes[current_selected_vidmode].ratio[0], video_modes[current_selected_vidmode].ratio[1]));
 
-	// Fullscreen
 	Menu_Button(2, "vm_fulls", "FULLSCREEN", "Change Fullscreen Mode.") ? Menu_Video_UpdateFullscreen() : 0;
 	Menu_DrawOptionValue(2, (current_fullscreen == 0) ? "DISABLED" : (current_fullscreen == 1) ? "ENABLED" : "BORDERLESS");
 
-	// Show FPS
 	Menu_Button(3, "vm_shfps", "SHOW FPS", "Toggles display of FPS Values.") ? Menu_Video_UpdateShowFPS() : 0;
 	Menu_DrawOptionValue(3, (current_showfps == 0) ? "DISABLED" : (current_showfps == 1) ? "ENABLED" : "VERBOSE");
 
-	// Max FPS
 	if (cvar("vid_vsync") == 0) {
 		Menu_Button(4, "vm_maxps", "MAX FPS", "Configure Maximum FPS Value.") ? 0 : 0;
 		Menu_CvarSlider(4, "vm_maxps", [10, 500, 490], "cl_maxfps", true, false, false);
@@ -219,48 +215,38 @@ void() Menu_Video = {
 		Menu_GreyButton(4, "[VSYNC ON] MAX FPS");
 	}
 
-	// VSync
 	Menu_Button(5, "vm_vsync", "VSYNC", "Sync Framerate with Display.") ? Menu_Video_UpdateVsync() : 0;
 	Menu_DrawOptionValue(5, current_vsync ? "ENABLED" : "DISABLED");
 
-	// Field of View
 	Menu_Button(6, "vm_fov", "FIELD OF VIEW", "Change Camera Field of View.") ? 0 : 0;
 	Menu_CvarSlider(6, "vm_fov", [10, 150, 140], "fov", true, false, false);
 
-	// Gamma
 	Menu_Button(7, "vm_gamma", "GAMMA", "Adjust game Black Level.") ? 0 : 0;
 	Menu_CvarSlider(7, "vm_gamma", [0.3, 2, 17], "gamma", false, true, false);
 
-	// Ultrawide Mode
 	Menu_Button(8, "vm_uwide", "ULTRAWIDE MODE", "Condenses HUD closer to center of Display.") ? Menu_Video_UpdateUltrawide() : 0;
 	Menu_DrawOptionValue(8, current_ultrawide ? "ENABLED" : "DISABLED");
 
-	// Particles
 	Menu_Button(9, "vm_parts", "PARTICLES", "Toggle Particle Effects for Performance.") ? Menu_Video_UpdateParticles() : 0;
 	Menu_DrawOptionValue(9, current_particles ? "ENABLED" : "DISABLED");
 
-	// Decals
 	Menu_Button(10, "vm_decal", "DECALS", "Toggle Bullet Holes and Blood.") ? Menu_Video_UpdateDecals() : 0;
 	Menu_DrawOptionValue(10, current_decals ? "ENABLED" : "DISABLED");
 
-	// Dynamic Lights
 	Menu_Button(11, "vm_dynlgt", "DYNAMIC LIGHTS", "Toggle Realtime Lights.") ? Menu_Video_UpdateDynLight() : 0;
 	Menu_DrawOptionValue(11, current_dynlight ? "ENABLED" : "DISABLED");
 
-	// Shadows
 	Menu_Button(12, "vm_shdw", "SHADOWS", "Toggle Entity Shadows.") ? Menu_Video_UpdateShadows() : 0;
 	Menu_DrawOptionValue(12, current_shadows ? "ENABLED" : "DISABLED");
 
-	// Weapon Bob
 	Menu_Button(13, "vm_bob", "WEAPON BOB", "Toggle Weapon Swaying.") ? Menu_Video_UpdateBob() : 0;
 	Menu_DrawOptionValue(13, current_bob ? "ENABLED" : "DISABLED");
 
-	// Texture Filtering
 	Menu_Button(14, "vm_filtr", "TEXTURE FILTERING", "Choose 3D Environment Filtering Mode.") ? Menu_Video_UpdateFiltering() : 0;
 	Menu_DrawOptionValue(14, current_filter ? "NEAREST" : "LINEAR");
 
 	Menu_DrawDivider(14.25);
-	// KORREKTUR: 15 und 16 statt -2 und -1, damit sie sauber in der Liste nach unten wandern
+	
 	Menu_Button(15, "vm_apply", "APPLY", "Save & Apply Settings.") ? Menu_Video_ApplySettings() : 0;
 	Menu_Button(16, "vm_back", "BACK", "Return to Configuration Menu.") ? current_menu = MENU_OPTIONS : 0;
 
