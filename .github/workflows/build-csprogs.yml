@@ -41,10 +41,11 @@ jobs:
           mkdir -p build/fte build/standard
 
           # KORREKTE FLAGS für FTEQCC 6202:
-          # -Tversion7  -> erzwingt KK Version 7 progs
-          # -Kno-struct -> deaktiviert struct-Keyword (verhindert ev_float32b etc.)
-          # -Kno-union  -> deaktiviert union-Keyword
-          FTEQCC_FLAGS="-O3 -Ono-compound_jumps -Wall -Tversion7 -Kno-struct -Kno-union"
+          # -Tversion7  -> erzwingt KK Version 7 progs (FTE/KK-Format).
+          # WICHTIG: KEIN -Kno-struct / -Kno-union, da fte.qc das struct-Keyword
+          # für die JSON-Definitionen benötigt. Ohne diese Keywords bricht der
+          # Compiler mit '"struct" is not a type' ab.
+          FTEQCC_FLAGS="-O3 -Ono-compound_jumps -Wall -Tversion7"
 
           echo "=== Kompiliere Client (CSQC) ==="
           bin/fteqcc-cli-lin $FTEQCC_FLAGS -srcfile progs/csqc.src
@@ -207,4 +208,4 @@ jobs:
           path: |
             source/
             patch_output.log
-          if-no-files-found: error
+          if-no-files-found: error 
