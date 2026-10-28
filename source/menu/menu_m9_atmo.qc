@@ -30,7 +30,6 @@ string(string next_id) Menu_M9_Atmo_GetPreviousButton = {
     return ret;
 };
 
-// Presets: setzen mehrere CVars auf einmal
 void() Menu_M9_Atmo_Performance = {
     Menu_PlaySound(MENU_SND_ENTER);
     cvar_set("nzp_particles", "0");
@@ -80,17 +79,14 @@ void() Menu_M9_Atmo_CycleFogDensity = {
     Menu_PlaySound(MENU_SND_ENTER);
     float current = cvar("r_fog_start");
     if (current >= 500) {
-        // Cinematic
         cvar_set("r_fog_start", "80");
         cvar_set("r_fog_end", "700");
         cvar_set("r_fog_color", "0.15 0.15 0.20");
     } else if (current >= 80) {
-        // Balanced
         cvar_set("r_fog_start", "500");
         cvar_set("r_fog_end", "3000");
         cvar_set("r_fog_color", "0.45 0.45 0.50");
     } else {
-        // Performance
         cvar_set("r_fog_start", "2048");
         cvar_set("r_fog_end", "4096");
         cvar_set("r_fog_color", "0.3 0.3 0.35");
