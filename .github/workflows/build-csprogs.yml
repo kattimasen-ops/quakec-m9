@@ -42,30 +42,37 @@ jobs:
 
           echo "=== Kompiliere Client (CSQC) ==="
           bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/csqc.src
-          if [ ! -f build/fte/csprogs.dat ]; then
-            echo "FEHLER: csprogs.dat wurde nicht erzeugt!"
-            exit 1
-          fi
 
           echo "=== Kompiliere Menu ==="
           bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/menu.src
-          if [ ! -f build/fte/menu.dat ]; then
-            echo "FEHLER: menu.dat wurde nicht erzeugt!"
-            exit 1
-          fi
 
           echo "=== Kompiliere Server (SSQC / progs.dat) ==="
           bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/ssqc.src
-          if [ ! -f build/standard/progs.dat ]; then
-            echo "FEHLER: progs.dat wurde nicht erzeugt! (SSQC-Fehler?)"
-            find build -name "*.dat" -exec ls -la {} \;
+
+          echo "=== Suche erzeugte .dat-Dateien ==="
+          find . -name "csprogs.dat" -o -name "menu.dat" -o -name "progs.dat" | sort
+
+          # Kopiere an die erwarteten Orte – unabhängig davon, wo fteqcc sie abgelegt hat
+          CSQC_SRC=$(find . -name "csprogs.dat" | head -n 1)
+          MENU_SRC=$(find . -name "menu.dat" | head -n 1)
+          PROGS_SRC=$(find . -name "progs.dat" | head -n 1)
+
+          if [ -z "$CSQC_SRC" ] || [ -z "$MENU_SRC" ] || [ -z "$PROGS_SRC" ]; then
+            echo "FEHLER: Mindestens eine .dat-Datei wurde nicht erzeugt."
+            echo "CSQC:  ${CSQC_SRC:-<fehlt>}"
+            echo "MENU:  ${MENU_SRC:-<fehlt>}"
+            echo "PROGS: ${PROGS_SRC:-<fehlt>}"
             exit 1
           fi
 
-          echo "=== Verschiebe fertige Dateien ins Repo-Root ==="
-          cp build/fte/csprogs.dat csprogs.dat
-          cp build/fte/menu.dat menu.dat
-          cp build/standard/progs.dat progs.dat
+          cp "$CSQC_SRC"  build/fte/csprogs.dat
+          cp "$MENU_SRC"  build/fte/menu.dat
+          cp "$PROGS_SRC" build/standard/progs.dat
+
+          # Ins Repo-Root für den Upload
+          cp build/fte/csprogs.dat      csprogs.dat
+          cp build/fte/menu.dat         menu.dat
+          cp build/standard/progs.dat   progs.dat
 
           echo "=== Ergebnis ==="
           ls -la csprogs.dat menu.dat progs.dat
@@ -73,9 +80,17 @@ jobs:
       - name: Inspect progs.dat Header (Before Patch)
         run: |
           python3 - <<'PYEOF'
-          import struct
-          with open("progs.dat", "rb") as f:
-              data = f.read(20)
+          import struct, os, sys
+
+          path = "progs.dat"
+          if not os.path.exists(path):
+              sys.exit(f"FEHLER: {path} existiert nicht.")
+          size = os.path.getsize(path)
+          if size < 24:
+              sys.exit(f"FEHLER: {path} ist nur {size} Bytes groß (mindestens 24 erwartet).")
+
+          with open(path, "rb") as f:
+              data = f.read(24)
           version, crc, ofs_statements, num_statements, ofs_globaldefs, num_globaldefs = struct.unpack("<6i", data)
           print(f"[VORHER] version        = {version}")
           print(f"[VORHER] crc            = {crc}")
@@ -88,67 +103,66 @@ jobs:
       - name: Set QuakeWorld CRC and Version (54730 / 6)
         run: |
           python3 - <<'PYEOF'
-          import struct
+          import struct, os, sys
 
           QW_VERSION = 6
-          QW_CRC = 54730  # PROGHEADER_CRC_QW (engine/common/pr_common.h)
+          QW_CRC = 54730  # PROGHEADER_CRC_QW
 
           path = "progs.dat"
+          if not os.path.exists(path):
+              sys.exit(f"FEHLER: {path} existiert nicht.")
+          if os.path.getsize(path) < 8:
+              sys.exit(f"FEHLER: {path} ist zu klein, um den Header zu schreiben.")
+
           with open(path, "r+b") as f:
-              # version (Offset 0x00)
               f.seek(0x00)
               f.write(struct.pack("<i", QW_VERSION))
-              # crc (Offset 0x04) – NICHT 0x0C!
               f.seek(0x04)
               f.write(struct.pack("<i", QW_CRC))
 
-          # Verifikation: Header erneut lesen
           with open(path, "rb") as f:
-              data = f.read(8)
-          version, crc = struct.unpack("<2i", data)
-
-          if version != QW_VERSION:
-              raise SystemExit(f"FEHLER: version ist {version}, erwartet {QW_VERSION}")
-          if crc != QW_CRC:
-              raise SystemExit(f"FEHLER: crc ist {crc}, erwartet {QW_CRC}")
-
+              version, crc = struct.unpack("<2i", f.read(8))
+          if version != QW_VERSION or crc != QW_CRC:
+              sys.exit(f"FEHLER: Header nicht korrekt (version={version}, crc={crc})")
           print(f"[NACHHER] version = {version} (QuakeWorld)")
           print(f"[NACHHER] crc     = {crc} (PROGHEADER_CRC_QW)")
-          print("CRC und Version erfolgreich gesetzt.")
           PYEOF
 
       - name: Verify CRC Recognition (Simulation)
         run: |
           python3 - <<'PYEOF'
-          import struct
+          import struct, os, sys
 
-          # Simuliert die FTEQW-Erkennungslogik aus engine/server/pr_cmds.c
           KNOWN_CRCS = {
               54730: "QuakeWorld (PROGHEADER_CRC_QW)",
               5927:  "NetQuake (PROGHEADER_CRC_NQ)",
-              26940: "Prerelease (PROGHEADER_CRC_PREREL)",
-              32401: "Tenebrae (PROGHEADER_CRC_TENEBRAE)",
+              26940: "Prerelease",
+              32401: "Tenebrae",
               38488: "Hexen2 (PROGHEADER_CRC_H2)",
-              26905: "Hexen2 Mission Pack (PROGHEADER_CRC_H2MP)",
+              26905: "Hexen2 Mission Pack",
               22390: "CSQC (PROGHEADER_CRC_CSQC)",
-              52195: "DarkPlaces CSQC (PROGHEADER_CRC_CSQC_DP)",
+              52195: "DarkPlaces CSQC",
               10020: "MenuQC (PROGHEADER_CRC_MENUQC)",
           }
 
-          with open("progs.dat", "rb") as f:
+          path = "progs.dat"
+          if not os.path.exists(path) or os.path.getsize(path) < 8:
+              sys.exit(f"FEHLER: {path} fehlt oder ist zu klein.")
+
+          with open(path, "rb") as f:
               f.seek(0x04)
               crc = struct.unpack("<i", f.read(4))[0]
 
           if crc in KNOWN_CRCS:
               print(f"✅ CRC {crc} wird erkannt als: {KNOWN_CRCS[crc]}")
           else:
-              print(f"❌ CRC {crc} ist UNBEKANNT. Die Engine wird den falschen Kompatibilitätsmodus aktivieren.")
-              raise SystemExit(1)
-          PYEOF
+              sys.exit(f"❌ CRC {crc} ist UNBEKANNT. Die Engine wird den falschen Kompatibilitätsmodus aktivieren.")
 
-          # Kopie als qwprogs.dat für alle Fälle
-          cp progs.dat qwprogs.dat
-          echo "qwprogs.dat erstellt."
+          # Kopie als qwprogs.dat
+          with open("qwprogs.dat", "wb") as f:
+              f.write(open(path, "rb").read())
+          print("qwprogs.dat erstellt.")
+          PYEOF
 
       - name: Stage MD3 Models
         run: |
