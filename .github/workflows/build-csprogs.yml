@@ -40,10 +40,11 @@ jobs:
           chmod +x bin/fteqcc-cli-lin
           mkdir -p build/fte build/standard
 
-          # -version 7 erzwingt das FTE/KK-Format (entspricht der Referenz-Binary).
-          # -fno-structs -fno-unions deaktivieren experimentelle Erweiterungen,
-          # die negative Feldtypen erzeugen, welche die alte Binary nicht kennt.
-          FTEQCC_FLAGS="-O3 -Ono-compound_jumps -Wall -version 7 -fno-structs -fno-unions"
+          # KORREKTE FLAGS für FTEQCC 6202:
+          # -Tversion7  -> erzwingt KK Version 7 progs
+          # -Kno-struct -> deaktiviert struct-Keyword (verhindert ev_float32b etc.)
+          # -Kno-union  -> deaktiviert union-Keyword
+          FTEQCC_FLAGS="-O3 -Ono-compound_jumps -Wall -Tversion7 -Kno-struct -Kno-union"
 
           echo "=== Kompiliere Client (CSQC) ==="
           bin/fteqcc-cli-lin $FTEQCC_FLAGS -srcfile progs/csqc.src
@@ -108,7 +109,7 @@ jobs:
           python3 - <<'PYEOF'
           import struct, os, sys
 
-          # WICHTIG: Die Referenz-Binary erwartet version 7 (FTE-Format),
+          # WICHTIG: Die Referenz-Binary erwartet version 7 (FTE/KK-Format),
           # NICHT version 6 (QuakeWorld-Standard). Der CRC 54730 bleibt.
           FTE_VERSION = 7
           QW_CRC = 54730
