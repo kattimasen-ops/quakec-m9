@@ -484,7 +484,6 @@ void() _sui_menukey_downarrow =
 		case MENU_ACCESSIBILITY:
 			_hover_actions[0] = Menu_Accessibility_GetNextButton(current_hovered_option);
 			break;
-		// NEU: Navigation für Atmosphäre Menü nach unten
 		case MENU_M9_ATMO:
 			_hover_actions[0] = Menu_M9_Atmo_GetNextButton(current_hovered_option);
 			break;
@@ -566,7 +565,6 @@ void() _sui_menukey_uparrow =
 		case MENU_ACCESSIBILITY:
 			_hover_actions[0] = Menu_Accessibility_GetPreviousButton(current_hovered_option);
 			break;
-		// NEU: Navigation für Atmosphäre Menü nach oben
 		case MENU_M9_ATMO:
 			_hover_actions[0] = Menu_M9_Atmo_GetPreviousButton(current_hovered_option);
 			break;
