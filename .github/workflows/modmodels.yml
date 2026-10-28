@@ -12,16 +12,52 @@ jobs:
 
       - name: Download Official Zombie Source
         run: |
+          set -euo pipefail
           mkdir -p source_assets
-          curl -L -o source_assets/zombie_mesh.blend "https://github.com/nzp-team/assets/raw/main/source/models/ai/zfull/mesh.blend"
+          curl -L -o source_assets/zombie_mesh.blend \
+            "https://github.com/nzp-team/assets/raw/main/source/models/ai/zfull/mesh.blend"
 
-      - name: Run Blender Headless to Split and Export
-        uses: addnab/docker-run-action@v3
-        with:
-          image: blenderkit/headless-blender:latest
-          options: -v ${{ github.workspace }}:/workspace -w /workspace
-          run: |
-            blender -b source_assets/zombie_mesh.blend --python scripts/blender_split_export.py -- /workspace/output_models
+      - name: Install Blender 4.5.3 (Headless)
+        run: |
+          set -euo pipefail
+          BLENDER_VERSION="4.5.3"
+          BLENDER_URL="https://mirror.dotsrc.org/mirrors/blender/release/Blender4.5/blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+
+          echo "Lade Blender ${BLENDER_VERSION} herunter..."
+          wget -q "${BLENDER_URL}" -O /tmp/blender.tar.xz
+
+          echo "Entpacke Blender..."
+          mkdir -p /opt/blender
+          tar -xf /tmp/blender.tar.xz -C /opt/blender --strip-components=1
+          rm /tmp/blender.tar.xz
+
+          echo "Füge Blender zum PATH hinzu..."
+          echo "/opt/blender" >> $GITHUB_PATH
+
+          echo "Teste Blender..."
+          /opt/blender/blender --version
+
+      - name: Install MD3 Export Add-on
+        run: |
+          set -euo pipefail
+          # Add-on von GitHub klonen
+          git clone --depth 1 https://github.com/neumond/blender-md3.git /tmp/blender-md3
+
+          # Add-on in Blender-Add-ons-Ordner kopieren
+          # Der Pfad für Blender 4.5.x ist: ~/.config/blender/4.5/scripts/addons/
+          ADDON_DIR="$HOME/.config/blender/4.5/scripts/addons"
+          mkdir -p "$ADDON_DIR"
+          cp -r /tmp/blender-md3/io_scene_md3 "$ADDON_DIR/"
+
+          echo "Add-on installiert in: $ADDON_DIR"
+          ls -la "$ADDON_DIR"
+
+      - name: Run Blender Python Script
+        run: |
+          set -euo pipefail
+          # Blender ist jetzt im PATH verfügbar
+          blender -b source_assets/zombie_mesh.blend \
+            --python scripts/blender_split_export.py -- /workspace/output_models
 
       - name: Upload MD3 Artifacts
         uses: actions/upload-artifact@v4
