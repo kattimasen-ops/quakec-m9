@@ -752,7 +752,7 @@ void() PU_MaxAmmo =
 		}	
 
 		// Force the player to reload if their mag is empty
-		if (players.weapons[0].weapon_magazine == 0 || (IsDualWeapon(players.weapon) && players.weapons[0].weapon_magazine_left == 0)) {
+		if (players.weapon > 0 && (players.weapons[0].weapon_magazine == 0 || (IsDualWeapon(players.weapon) && players.weapons[0].weapon_magazine_left == 0))) {
 			tempe = self;
 			self = players;
 			W_Reload(S_BOTH);
