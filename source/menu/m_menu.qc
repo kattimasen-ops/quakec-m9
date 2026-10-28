@@ -1037,6 +1037,9 @@ void(vector size) root_menu =
 		case MENU_GAMEPAD: Menu_Gamepad(); break;
 		case MENU_BINDINGS: Menu_Bindings(); break;
 		case MENU_ACCESSIBILITY: Menu_Accessibility(); break;
+		
+		// WICHTIG: Dieser Case wurde hinzugefügt, damit das Menü gezeichnet wird!
+		case MENU_M9_ATMO: Menu_M9_Atmosphere(); break;
 
 		default: break;
 	}
