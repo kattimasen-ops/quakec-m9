@@ -3,7 +3,7 @@ import sys
 import os
 
 def main():
-    # 1. Add-on aktivieren (falls nicht automatisch geladen)
+    # 1. Add-on aktivieren (todashuta-Fork: Modulname bleibt io_scene_md3)
     try:
         bpy.ops.preferences.addon_enable(module="io_scene_md3")
         print("MD3 Add-on aktiviert.")
@@ -58,11 +58,9 @@ def main():
 
 def export_md3(obj, filepath):
     """Exportiert ein Objekt als MD3 mit korrektem Kontext."""
-    # Kontext für headless Blender setzen
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
 
-    # temp_override verwenden, um den Kontext für den Operator bereitzustellen
     with bpy.context.temp_override(active_object=obj, selected_objects=[obj]):
         try:
             bpy.ops.export_scene.id3_md3(
