@@ -68,6 +68,39 @@ jobs:
           echo "=== Ergebnis ==="
           ls -la csprogs.dat menu.dat progs.dat
 
+      - name: Set QuakeWorld CRC in progs.dat (Ansatz A)
+        run: |
+          set -euo pipefail
+          python3 - <<'PYEOF'
+          import struct
+
+          QW_CRC = 54730  # PROGHEADER_CRC_QW – Standard-QuakeWorld-CRC
+          path = "progs.dat"
+
+          with open(path, "r+b") as f:
+              # Quake dprograms_t Header:
+              #   0x00: version (int32)
+              #   0x04: crc     (int32)  <-- hier steht der CRC
+              f.seek(0x04)
+              f.write(struct.pack("<i", QW_CRC))
+
+          # Verifikation: CRC erneut lesen
+          with open(path, "rb") as f:
+              f.seek(0x04)
+              written = struct.unpack("<i", f.read(4))[0]
+
+          if written != QW_CRC:
+              raise SystemExit(f"FEHLER: CRC konnte nicht gesetzt werden (gelesen: {written})")
+
+          print(f"CRC in {path} erfolgreich auf {written} (QuakeWorld) gesetzt.")
+          PYEOF
+
+          # Zusätzlich als qwprogs.dat bereitstellen (manche Setups erwarten diesen Namen)
+          cp progs.dat qwprogs.dat
+
+          echo "=== Ergebnis nach CRC-Patch ==="
+          ls -la progs.dat qwprogs.dat
+
       - name: Stage MD3 Models
         run: |
           set -euo pipefail
@@ -85,6 +118,7 @@ jobs:
             csprogs.dat
             menu.dat
             progs.dat
+            qwprogs.dat
             artifact/*.md3
           if-no-files-found: error
 
