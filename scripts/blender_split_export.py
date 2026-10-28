@@ -6,8 +6,20 @@ def main():
     # Argumente nach dem "--" entgegennehmen
     argv = sys.argv
     argv = argv[argv.index("--") + 1:] if "--" in argv else []
-    output_dir = argv[0] if argv else "/workspace/output_models"
-    os.makedirs(output_dir, exist_ok=True)
+    output_dir = argv[0] if argv else os.path.join(os.getcwd(), "output_models")
+    
+    # Stelle sicher, dass der Ausgabeordner existiert und beschreibbar ist
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+        # Teste Schreibberechtigung
+        test_file = os.path.join(output_dir, ".write_test")
+        with open(test_file, "w") as f:
+            f.write("test")
+        os.remove(test_file)
+        print(f"Ausgabeordner bereit: {output_dir}")
+    except Exception as e:
+        print(f"FEHLER: Ausgabeordner '{output_dir}' nicht beschreibbar: {e}")
+        sys.exit(1)
 
     # 1. Alle Mesh-Objekte in der Szene finden
     meshes = [obj for obj in bpy.context.scene.objects if obj.type == 'MESH']
@@ -45,12 +57,10 @@ def main():
 
 def export_md3(obj, filepath):
     """Exportiert ein einzelnes Objekt als MD3-Datei."""
-    # Deselektiere alles, wähle nur das Zielobjekt aus
     bpy.ops.object.select_all(action='DESELECT')
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
 
-    # Der MD3-Exporter von neumond/blender-md3 heißt 'export_scene.id3_md3'
     try:
         bpy.ops.export_scene.id3_md3(
             filepath=filepath,
