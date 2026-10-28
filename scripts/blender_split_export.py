@@ -3,77 +3,80 @@ import sys
 import os
 
 def main():
-    # Argumente nach dem "--" entgegennehmen
+    # 1. Add-on aktivieren (falls nicht automatisch geladen)
+    try:
+        bpy.ops.preferences.addon_enable(module="io_scene_md3")
+        print("MD3 Add-on aktiviert.")
+    except Exception as e:
+        print(f"WARNUNG: Add-on konnte nicht aktiviert werden: {e}")
+
+    # 2. Argumente nach dem "--" entgegennehmen
     argv = sys.argv
     argv = argv[argv.index("--") + 1:] if "--" in argv else []
     output_dir = argv[0] if argv else os.path.join(os.getcwd(), "output_models")
-    
-    # Stelle sicher, dass der Ausgabeordner existiert und beschreibbar ist
+
+    # 3. Ausgabeordner prüfen
+    os.makedirs(output_dir, exist_ok=True)
+    test_file = os.path.join(output_dir, ".write_test")
     try:
-        os.makedirs(output_dir, exist_ok=True)
-        # Teste Schreibberechtigung
-        test_file = os.path.join(output_dir, ".write_test")
         with open(test_file, "w") as f:
             f.write("test")
         os.remove(test_file)
         print(f"Ausgabeordner bereit: {output_dir}")
     except Exception as e:
-        print(f"FEHLER: Ausgabeordner '{output_dir}' nicht beschreibbar: {e}")
+        print(f"FEHLER: Ausgabeordner nicht beschreibbar: {e}")
         sys.exit(1)
 
-    # 1. Alle Mesh-Objekte in der Szene finden
+    # 4. Mesh-Objekte finden
     meshes = [obj for obj in bpy.context.scene.objects if obj.type == 'MESH']
     if not meshes:
-        print("FEHLER: Keine Mesh-Objekte in der .blend-Datei gefunden.")
+        print("FEHLER: Keine Mesh-Objekte gefunden.")
         sys.exit(1)
 
-    # Das erste Mesh als Basis nehmen
     base_obj = meshes[0]
     vertex_groups = list(base_obj.vertex_groups.keys())
     print(f"Gefundene Vertex-Gruppen: {vertex_groups}")
 
     if not vertex_groups:
-        # Fallback: Das gesamte Mesh als ein MD3 exportieren
-        print("WARNUNG: Keine Vertex-Gruppen gefunden. Exportiere als Ganzes.")
+        print("WARNUNG: Keine Vertex-Gruppen. Exportiere gesamtes Mesh.")
         export_md3(base_obj, os.path.join(output_dir, "zombie_full.md3"))
         return
 
-    # 2. Für jede Vertex-Gruppe ein separates Objekt erstellen und exportieren
+    # 5. Für jede Vertex-Gruppe exportieren
     for vg_name in vertex_groups:
-        # Dupliziere das Basis-Objekt
         new_obj = base_obj.copy()
         new_obj.data = base_obj.data.copy()
         new_obj.name = f"zombie_{vg_name}"
         bpy.context.collection.objects.link(new_obj)
 
-        # Entferne alle anderen Vertex-Gruppen (behalte nur die aktuelle)
         for vg in list(new_obj.vertex_groups):
             if vg.name != vg_name:
                 new_obj.vertex_groups.remove(vg)
 
-        # Exportiere das neue Objekt als MD3
         export_md3(new_obj, os.path.join(output_dir, f"{vg_name}.md3"))
 
 
 def export_md3(obj, filepath):
-    """Exportiert ein einzelnes Objekt als MD3-Datei."""
-    bpy.ops.object.select_all(action='DESELECT')
-    obj.select_set(True)
+    """Exportiert ein Objekt als MD3 mit korrektem Kontext."""
+    # Kontext für headless Blender setzen
     bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
 
-    try:
-        bpy.ops.export_scene.id3_md3(
-            filepath=filepath,
-            preset="MATERIALS",
-            only_selected=True,
-            limits="STUPID",
-            start_frame=0,
-            end_frame=0,
-            individual=False
-        )
-        print(f"OK: {filepath} exportiert.")
-    except Exception as e:
-        print(f"FEHLER beim Export von {filepath}: {e}")
+    # temp_override verwenden, um den Kontext für den Operator bereitzustellen
+    with bpy.context.temp_override(active_object=obj, selected_objects=[obj]):
+        try:
+            bpy.ops.export_scene.id3_md3(
+                filepath=filepath,
+                preset="MATERIALS",
+                only_selected=True,
+                limits="STUPID",
+                start_frame=0,
+                end_frame=0,
+                individual=False
+            )
+            print(f"OK: {filepath} exportiert.")
+        except Exception as e:
+            print(f"FEHLER beim Export von {filepath}: {e}")
 
 
 if __name__ == "__main__":
