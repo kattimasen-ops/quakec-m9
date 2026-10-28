@@ -260,8 +260,9 @@ void() Menu_Video = {
 	Menu_DrawOptionValue(14, current_filter ? "NEAREST" : "LINEAR");
 
 	Menu_DrawDivider(14.25);
-	Menu_Button(-2, "vm_apply", "APPLY", "Save & Apply Settings.") ? Menu_Video_ApplySettings() : 0;
-	Menu_Button(-1, "vm_back", "BACK", "Return to Configuration Menu.") ? current_menu = MENU_OPTIONS : 0;
+	// KORREKTUR: 15 und 16 statt -2 und -1, damit sie sauber in der Liste nach unten wandern
+	Menu_Button(15, "vm_apply", "APPLY", "Save & Apply Settings.") ? Menu_Video_ApplySettings() : 0;
+	Menu_Button(16, "vm_back", "BACK", "Return to Configuration Menu.") ? current_menu = MENU_OPTIONS : 0;
 
 	sui_pop_frame();
 };
