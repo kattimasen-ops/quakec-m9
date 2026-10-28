@@ -1,0 +1,42 @@
+name: Compare qwprogs.dat Files
+
+on:
+  push:
+    paths:
+      - 'diagnostics/**'
+      - 'scripts/compare_progs.py'
+      - '.github/workflows/build-compare.yml'
+  workflow_dispatch:
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify both files exist
+        run: |
+          set -euo pipefail
+          for f in diagnostics/reference_qwprogs.dat diagnostics/current_qwprogs.dat; do
+            if [ ! -f "$f" ]; then
+              echo "FEHLER: $f fehlt."
+              ls -la diagnostics/ || true
+              exit 1
+            fi
+            echo "$f: $(stat -c%s "$f") Bytes"
+          done
+
+      - name: Parse and compare progs files
+        run: |
+          python3 scripts/compare_progs.py \
+            diagnostics/reference_qwprogs.dat \
+            diagnostics/current_qwprogs.dat | tee comparison_report.txt
+
+      - name: Upload comparison report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: progs-comparison-report
+          path: comparison_report.txt
+          if-no-files-found: warn
