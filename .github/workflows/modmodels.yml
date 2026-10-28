@@ -1,0 +1,31 @@
+name: Process Zombie Dismemberment Models
+
+on:
+  workflow_dispatch:
+
+jobs:
+  process-models:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Official Zombie Source
+        run: |
+          mkdir -p source_assets
+          curl -L -o source_assets/zombie_mesh.blend "https://github.com/nzp-team/assets/raw/main/source/models/ai/zfull/mesh.blend"
+
+      - name: Run Blender Headless to Split and Export
+        uses: addnab/docker-run-action@v3
+        with:
+          image: blenderkit/headless-blender:latest
+          options: -v ${{ github.workspace }}:/workspace -w /workspace
+          run: |
+            blender -b source_assets/zombie_mesh.blend --python scripts/blender_split_export.py -- /workspace/output_models
+
+      - name: Upload MD3 Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zombie-dismemberment-md3
+          path: output_models/
+          if-no-files-found: error
