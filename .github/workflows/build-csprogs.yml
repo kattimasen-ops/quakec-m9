@@ -40,11 +40,6 @@ jobs:
           chmod +x bin/fteqcc-cli-lin
           mkdir -p build/fte build/standard
 
-          # KORREKTE FLAGS für FTEQCC 6202:
-          # -Tversion7  -> erzwingt KK Version 7 progs (FTE/KK-Format).
-          # WICHTIG: KEIN -Kno-struct / -Kno-union, da fte.qc das struct-Keyword
-          # für die JSON-Definitionen benötigt. Ohne diese Keywords bricht der
-          # Compiler mit '"struct" is not a type' ab.
           FTEQCC_FLAGS="-O3 -Ono-compound_jumps -Wall -Tversion7"
 
           echo "=== Kompiliere Client (CSQC) ==="
@@ -56,12 +51,12 @@ jobs:
           echo "=== Kompiliere Server (SSQC / progs.dat) ==="
           bin/fteqcc-cli-lin $FTEQCC_FLAGS -srcfile progs/ssqc.src
 
-          echo "=== Suche erzeugte .dat-Dateien ==="
-          find . -name "csprogs.dat" -o -name "menu.dat" -o -name "progs.dat" | sort
+          echo "=== Suche erzeugte .dat-Dateien (nur in build/) ==="
+          find build -name "csprogs.dat" -o -name "menu.dat" -o -name "progs.dat" | sort
 
-          CSQC_SRC=$(find . -name "csprogs.dat" | head -n 1)
-          MENU_SRC=$(find . -name "menu.dat" | head -n 1)
-          PROGS_SRC=$(find . -name "progs.dat" | head -n 1)
+          CSQC_SRC=$(find build -name "csprogs.dat" -type f | head -n 1)
+          MENU_SRC=$(find build -name "menu.dat" -type f | head -n 1)
+          PROGS_SRC=$(find build -name "progs.dat" -type f | head -n 1)
 
           if [ -z "$CSQC_SRC" ] || [ -z "$MENU_SRC" ] || [ -z "$PROGS_SRC" ]; then
             echo "FEHLER: Mindestens eine .dat-Datei wurde nicht erzeugt."
@@ -71,9 +66,9 @@ jobs:
             exit 1
           fi
 
-          cp "$CSQC_SRC"  build/fte/csprogs.dat
-          cp "$MENU_SRC"  build/fte/menu.dat
-          cp "$PROGS_SRC" build/standard/progs.dat
+          [ "$CSQC_SRC"  != "build/fte/csprogs.dat"     ] && cp "$CSQC_SRC"  build/fte/csprogs.dat
+          [ "$MENU_SRC"  != "build/fte/menu.dat"        ] && cp "$MENU_SRC"  build/fte/menu.dat
+          [ "$PROGS_SRC" != "build/standard/progs.dat"  ] && cp "$PROGS_SRC" build/standard/progs.dat
 
           cp build/fte/csprogs.dat      csprogs.dat
           cp build/fte/menu.dat         menu.dat
@@ -110,8 +105,6 @@ jobs:
           python3 - <<'PYEOF'
           import struct, os, sys
 
-          # WICHTIG: Die Referenz-Binary erwartet version 7 (FTE/KK-Format),
-          # NICHT version 6 (QuakeWorld-Standard). Der CRC 54730 bleibt.
           FTE_VERSION = 7
           QW_CRC = 54730
 
@@ -208,4 +201,4 @@ jobs:
           path: |
             source/
             patch_output.log
-          if-no-files-found: error 
+          if-no-files-found: error
