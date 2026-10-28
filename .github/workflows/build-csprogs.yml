@@ -18,28 +18,49 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install pandas fastcrc colorama
 
+      - name: Verify Python Packages
+        run: |
+          python3 -c "import pandas; print('pandas', pandas.__version__)"
+          python3 -c "import fastcrc; print('fastcrc ok')"
+          python3 -c "import colorama; print('colorama ok')"
+
       - name: Apply Patches
         run: |
           python3 scripts/apply_nzp_m9_patches.py | tee patch_output.log
 
-      - name: Compile QuakeC
+      - name: Generate Hash Table
+        run: |
+          mkdir -p source/server
+          python3 bin/qc_hash_generator.py -i tools/asset_conversion_table.csv -o source/server/hash_table.qc
+
+      - name: Compile QuakeC (CSQC, Menu, SSQC)
         run: |
           chmod +x bin/fteqcc-cli-lin
           mkdir -p build/fte build/standard
 
-          echo "=== Generiere Hash-Tabelle ==="
-          python3 bin/qc_hash_generator.py -i tools/asset_conversion_table.csv -o source/server/hash_table.qc
-
           echo "=== Kompiliere Client (CSQC) ==="
           bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/csqc.src
+          if [ ! -f build/fte/csprogs.dat ]; then
+            echo "FEHLER: csprogs.dat wurde nicht erzeugt!"
+            exit 1
+          fi
 
           echo "=== Kompiliere Menu ==="
           bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/menu.src
+          if [ ! -f build/fte/menu.dat ]; then
+            echo "FEHLER: menu.dat wurde nicht erzeugt!"
+            exit 1
+          fi
 
           echo "=== Kompiliere Server (SSQC / progs.dat) ==="
           bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/ssqc.src
+          if [ ! -f build/standard/progs.dat ]; then
+            echo "FEHLER: progs.dat wurde nicht erzeugt! (SSQC-Fehler?)"
+            find build -name "*.dat" -exec ls -la {} \;
+            exit 1
+          fi
 
-          echo "=== Verschiebe fertige Dateien ==="
+          echo "=== Verschiebe fertige Dateien ins Repo-Root ==="
           cp build/fte/csprogs.dat csprogs.dat
           cp build/fte/menu.dat menu.dat
           cp build/standard/progs.dat progs.dat
@@ -53,6 +74,7 @@ jobs:
           mkdir -p artifact
           if [ -d "assets/models/ai" ]; then
             cp assets/models/ai/*.md3 artifact/ 2>/dev/null || true
+            ls -la artifact/ 2>/dev/null || true
           fi
 
       - name: Upload Compiled Files
