@@ -3,6 +3,11 @@
 # Idempotent. Stellt sicher, dass das Atmosphere & Gore Menü sichtbar und
 # auswählbar ist, behebt überlappende Buttons im Video-Menü und
 # die serverseitigen Crash-Ursachen.
+#
+# WICHTIG: Die kompilierte progs.dat MUSS anschließend mit dem
+# QuakeWorld-CRC (54730) versehen werden, damit die alte Binary sie
+# im korrekten Kompatibilitätsmodus lädt. Das übernimmt der Schritt
+# "Set QuakeWorld CRC in progs.dat" in build-csprogs.yml.
 
 import sys
 import re
