@@ -50,7 +50,6 @@ void() Menu_Options =
     Menu_Button(3, "om_binds", "CONTROLS", "Control Options and Bindings.") ? current_menu = MENU_CONTROL : 0;
     Menu_Button(4, "om_acces", "ACCESSIBILITY", "Content, Interface, and Readability options.") ? current_menu = MENU_ACCESSIBILITY : 0;
     
-    // NEU: Atmosphere & Gore Menüpunkt
     Menu_Button(5, "om_m9atmo", "ATMOSPHERE & GORE", "Fog, particles and gore options.") ? current_menu = MENU_M9_ATMO : 0;
     
     Menu_DrawDivider(6);
