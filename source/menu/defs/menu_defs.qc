@@ -61,7 +61,8 @@ enum {
     MENU_CREDITS,
     MENU_PAUSE,
     MENU_LOBBY,
-    MENU_GAMESETTINGS
+    MENU_GAMESETTINGS,
+    MENU_M9_ATMO // NEU: Atmosphere & Gore Menü
 };
 
 #define MENU_SND_NAVIGATE 	0
@@ -99,6 +100,11 @@ void() Menu_Control;
 void() Menu_Gamepad;
 void() Menu_Bindings;
 void() Menu_Accessibility;
+
+// NEU: Forward-Deklarationen für das M9-Menü
+void() Menu_M9_Atmosphere;
+string(string prev_id) Menu_M9_Atmo_GetNextButton;
+string(string next_id) Menu_M9_Atmo_GetPreviousButton;
 
 #ifdef MENU
 
