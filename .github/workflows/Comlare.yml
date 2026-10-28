@@ -1,11 +1,13 @@
-name: Compare qwprogs.dat Files
+name: Compare progs.dat (patched, crashes) vs qwprogs.dat.bak (working)
 
 on:
   push:
+    branches: [ main, master ]
     paths:
-      - 'diagnostics/**'
+      - 'progs.dat'
+      - 'qwprogs.dat.bak'
       - 'scripts/compare_progs.py'
-      - '.github/workflows/build-compare.yml'
+      - '.github/workflows/compare-progs.yml'
   workflow_dispatch:
 
 jobs:
@@ -18,20 +20,19 @@ jobs:
       - name: Verify both files exist
         run: |
           set -euo pipefail
-          for f in diagnostics/reference_qwprogs.dat diagnostics/current_qwprogs.dat; do
+          for f in progs.dat qwprogs.dat.bak; do
             if [ ! -f "$f" ]; then
-              echo "FEHLER: $f fehlt."
-              ls -la diagnostics/ || true
+              echo "FEHLER: $f fehlt im Repo-Root."
+              ls -la *.dat *.bak 2>/dev/null || true
               exit 1
             fi
             echo "$f: $(stat -c%s "$f") Bytes"
           done
 
-      - name: Parse and compare progs files
+      - name: Run comparison
+        continue-on-error: true
         run: |
-          python3 scripts/compare_progs.py \
-            diagnostics/reference_qwprogs.dat \
-            diagnostics/current_qwprogs.dat | tee comparison_report.txt
+          python3 scripts/compare_progs.py progs.dat qwprogs.dat.bak | tee comparison_report.txt
 
       - name: Upload comparison report
         if: always()
