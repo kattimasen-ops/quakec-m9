@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # NZP-M9 Patches – HUD (ohne Toast), HIT/KILL, Kill-Streak, Atmosphäre,
 # Coop-Browser-Navigation, A/B-Switch, Video-Optionen, Powerups-Runaway-Fix,
-# Video-Menü: Apply/Back nach unten (Standard NZ:P Pattern).
+# Video-Menü Apply/Back nach unten, Aim Assist dauerhaft aktiv,
+# neues Atmosphere & Gore Menü mit Presets.
 # Idempotent.
 
 import sys
@@ -46,7 +47,11 @@ def append_safe(path: Path, content: str, description: str, marker: str) -> None
 BASE = Path("source/menu")
 CLIENT = Path("source/client")
 SERVER = Path("source/server")
+PROGS = Path("progs")
+
 MENU_COOP = BASE / "menu_coop.qc"
+MENU_OPTS = BASE / "menu_opts.qc"
+MENU_M9_ATMO = BASE / "menu_m9_atmo.qc"
 SUI_SYS   = BASE / "sui_sys.qc"
 MENU_VIDE = BASE / "menu_vide.qc"
 MAIN_QC = BASE / "main.qc"
@@ -265,7 +270,6 @@ void() Menu_Video_UpdateBob = { Menu_PlaySound(MENU_SND_ENTER); current_bob = !c
 void() Menu_Video_UpdateUltrawide =''', "E4: Update-Funktionen", "Menu_Video_UpdateDynLight")
 
 if "vm_decal" not in MENU_VIDE.read_text(encoding="utf-8"):
-    # Template für frisch zu patchende Menüs: Apply/Back direkt an -2/-1 Positionen
     menu_video_function = '''
 void() Menu_Video =
 {
@@ -341,7 +345,7 @@ patch(MENU_VIDE,
 patch(MAIN_QC, 'build_datetime = fgets(file);', 'build_datetime = "M9 Pro Custom Build";\n        // build_datetime = fgets(file);', "Custom Version String", "M9 Pro Custom Build")
 
 # ==========================================
-# TEIL 4: CLIENT_MAIN – INITIALISIERUNG
+# TEIL 4: CLIENT_MAIN – INITIALISIERUNG + AIM ASSIST FIX
 # ==========================================
 patch(CLIENT_MAIN, "void(float apiver, string enginename, float enginever) CSQC_Init =\n{",
     """void(float apiver, string enginename, float enginever) CSQC_Init =
@@ -368,8 +372,16 @@ patch(CLIENT_MAIN, "void(float apiver, string enginename, float enginever) CSQC_
 	nzp_fog_check_time = 0;
 	nzp_last_indoor_state = FALSE;
 	nzp_fog_initialized = FALSE;
+	autocvar(nzp_fog_enabled, 1);
 """,
     "Initialisiere Variablen in CSQC_Init", "// NZP-M9 Initialisierungen")
+
+# Aim Assist dauerhaft aktiv (Cvar in_aimassist, nicht cl_aimassist)
+patch(CLIENT_MAIN,
+    'autocvar(in_aimassist, 0);',
+    'autocvar(in_aimassist, 1);\n\tcvar_set("in_aimassist", "1");',
+    "Aim Assist dauerhaft aktivieren (in_aimassist)",
+    'cvar_set("in_aimassist", "1");')
 
 # ==========================================
 # TEIL 5: CSQC_Parse_Event – POWERUPTOAST (Netzwerk-Sync)
@@ -386,7 +398,7 @@ patch_regex(CLIENT_MAIN, PARSE_PATTERN, PARSE_REPLACEMENT,
     "case CSQC_EVENT_POWERUPTOAST:")
 
 # ==========================================
-# TEIL 6: ATMOSPHÄRE-FUNKTIONEN
+# TEIL 6: ATMOSPHÄRE-FUNKTIONEN (mit nzp_fog_enabled-Respekt)
 # ==========================================
 ATMO_FUNCS = """
 // ==========================================
@@ -417,6 +429,12 @@ void() CSQC_UpdateAtmosphere =
 	}
 	nzp_fog_check_time = time + 0.5;
 
+	// Wenn User Fog deaktiviert hat: aus lassen, nicht wieder einschalten.
+	if (!cvar("nzp_fog_enabled")) {
+		if (cvar("r_fog")) cvar_set("r_fog", "0");
+		return;
+	}
+
 	float indoor = CSQC_IsIndoor();
 	nzp_is_indoor = indoor;
 
@@ -445,7 +463,7 @@ patch(CLIENT_MAIN, "noref void(float width, float height, float menushown) CSQC_
     "float() CSQC_IsIndoor =")
 
 # ==========================================
-# TEIL 7: HUD (OHNE Toast – behebt Kollision mit Kill-Streak)
+# TEIL 7: HUD (OHNE Toast)
 # ==========================================
 HUD_ADDITION = """	// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
 	CSQC_UpdateAtmosphere();
@@ -567,7 +585,7 @@ patch(CLIENT_MAIN, "\t//does what you think it does\n\trenderscene();",
     "--- NZP-M9 CUSTOM HUD ---")
 
 # ==========================================
-# TEIL 8: POWERUPS.QC – RUNAWAY-LOOP-FIX (robuste Regex)
+# TEIL 8: POWERUPS.QC – RUNAWAY-LOOP-FIX
 # ==========================================
 RUNAWAY_PATTERN = r'float\s+perk_to_give\s*=\s*0;[\s\S]{0,300}?float\s+found_perk_for_player\s*=\s*false;[\s\S]*?while\s*\(\s*!\s*found_perk_for_player\s*\)\s*\{[\s\S]*?if\s*\(\s*perk_to_give\s*!=\s*0\s*\)\s*found_perk_for_player\s*=\s*true;\s*\}'
 
@@ -602,6 +620,197 @@ RUNAWAY_REPLACEMENT = """float perk_to_give = 0;
 patch_regex(POWERUPS_QC, RUNAWAY_PATTERN, RUNAWAY_REPLACEMENT,
     "Powerups: Runaway-Loop deterministisch beheben",
     "NZP-M9 FIX: Deterministische")
+
+# ==========================================
+# TEIL 9: ATMOSPHERE & GORE MENÜ
+# ==========================================
+# 9.1 Enum erweitern
+MENU_DEFS_PATTERN = r'(MENU_GAMESETTINGS\s*)\}'
+MENU_DEFS_REPLACEMENT = r'\1, MENU_M9_ATMO }'
+patch_regex(MENU_DEFS, MENU_DEFS_PATTERN, MENU_DEFS_REPLACEMENT,
+            "Menü-Enum: MENU_M9_ATMO hinzufügen",
+            "MENU_M9_ATMO")
+
+# 9.2 Forward-Deklaration
+patch(MENU_DEFS, 'void(float wantmode) m_toggle;',
+      'void(float wantmode) m_toggle;\nvoid() Menu_M9_Atmosphere;',
+      "Forward-Deklaration für Menu_M9_Atmosphere",
+      "void() Menu_M9_Atmosphere;")
+
+# 9.3 menu_m9_atmo.qc erstellen
+if not MENU_M9_ATMO.exists():
+    MENU_M9_ATMO.write_text(r'''// NZP-M9: Atmosphäre & Gore Menü
+string menu_m9_atmo_buttons[9] = {
+    "m9_atmo_perf", "m9_atmo_balanced", "m9_atmo_cinematic",
+    "m9_atmo_particles", "m9_atmo_decals", "m9_atmo_fog",
+    "m9_atmo_fog_density", "m9_atmo_gore_level", "m9_atmo_back"
+};
+
+string(string prev_id) Menu_M9_Atmo_GetNextButton = {
+    if (prev_id == "") return menu_m9_atmo_buttons[0];
+    string ret = menu_m9_atmo_buttons[0];
+    for(float i = 0; i < menu_m9_atmo_buttons.length; i++) {
+        if (menu_m9_atmo_buttons[i] == prev_id) {
+            if (i + 1 >= menu_m9_atmo_buttons.length) break;
+            ret = menu_m9_atmo_buttons[i + 1];
+            break;
+        }
+    }
+    return ret;
+};
+
+string(string next_id) Menu_M9_Atmo_GetPreviousButton = {
+    if (next_id == "") return menu_m9_atmo_buttons[menu_m9_atmo_buttons.length - 1];
+    string ret = menu_m9_atmo_buttons[menu_m9_atmo_buttons.length - 1];
+    for(float i = menu_m9_atmo_buttons.length - 1; i > 0; i--) {
+        if (menu_m9_atmo_buttons[i] == next_id) {
+            if (i - 1 < 0) break;
+            ret = menu_m9_atmo_buttons[i - 1];
+            break;
+        }
+    }
+    return ret;
+};
+
+void() Menu_M9_Atmo_Performance = {
+    Menu_PlaySound(MENU_SND_ENTER);
+    cvar_set("nzp_particles", "0");
+    cvar_set("nzp_decals", "0");
+    cvar_set("nzp_fog_enabled", "0");
+    cvar_set("r_fog", "0");
+    cvar_set("cl_gibfilter", "1");
+};
+
+void() Menu_M9_Atmo_Balanced = {
+    Menu_PlaySound(MENU_SND_ENTER);
+    cvar_set("nzp_particles", "1");
+    cvar_set("nzp_decals", "1");
+    cvar_set("nzp_fog_enabled", "1");
+    cvar_set("r_fog", "1");
+    cvar_set("r_fog_start", "500");
+    cvar_set("r_fog_end", "3000");
+    cvar_set("r_fog_color", "0.45 0.45 0.50");
+    cvar_set("cl_gibfilter", "0");
+};
+
+void() Menu_M9_Atmo_Cinematic = {
+    Menu_PlaySound(MENU_SND_ENTER);
+    cvar_set("nzp_particles", "1");
+    cvar_set("nzp_decals", "1");
+    cvar_set("nzp_fog_enabled", "1");
+    cvar_set("r_fog", "1");
+    cvar_set("r_fog_start", "80");
+    cvar_set("r_fog_end", "700");
+    cvar_set("r_fog_color", "0.15 0.15 0.20");
+    cvar_set("cl_gibfilter", "0");
+};
+
+void() Menu_M9_Atmo_ToggleParticles = {
+    Menu_PlaySound(MENU_SND_ENTER);
+    if (cvar("nzp_particles")) cvar_set("nzp_particles", "0");
+    else cvar_set("nzp_particles", "1");
+};
+
+void() Menu_M9_Atmo_ToggleDecals = {
+    Menu_PlaySound(MENU_SND_ENTER);
+    if (cvar("nzp_decals")) cvar_set("nzp_decals", "0");
+    else cvar_set("nzp_decals", "1");
+};
+
+void() Menu_M9_Atmo_ToggleFog = {
+    Menu_PlaySound(MENU_SND_ENTER);
+    if (cvar("nzp_fog_enabled")) cvar_set("nzp_fog_enabled", "0");
+    else cvar_set("nzp_fog_enabled", "1");
+};
+
+void() Menu_M9_Atmo_CycleFogDensity = {
+    Menu_PlaySound(MENU_SND_ENTER);
+    float current = cvar("r_fog_start");
+    if (current >= 500) {
+        cvar_set("r_fog_start", "80");
+        cvar_set("r_fog_end", "700");
+        cvar_set("r_fog_color", "0.15 0.15 0.20");
+    } else if (current >= 80) {
+        cvar_set("r_fog_start", "500");
+        cvar_set("r_fog_end", "3000");
+        cvar_set("r_fog_color", "0.45 0.45 0.50");
+    } else {
+        cvar_set("r_fog_start", "2048");
+        cvar_set("r_fog_end", "4096");
+        cvar_set("r_fog_color", "0.3 0.3 0.35");
+    }
+};
+
+void() Menu_M9_Atmo_ToggleGore = {
+    Menu_PlaySound(MENU_SND_ENTER);
+    if (cvar("cl_gibfilter")) cvar_set("cl_gibfilter", "0");
+    else cvar_set("cl_gibfilter", "1");
+};
+
+void() Menu_M9_Atmosphere = {
+    Menu_DrawBackground();
+    Menu_DrawTitle("ATMOSPHERE & GORE");
+    Menu_DrawMapPanel();
+
+    Menu_Button(1, "m9_atmo_perf", "PERFORMANCE", "Maximum FPS: disables fog, particles and decals.") ? Menu_M9_Atmo_Performance() : 0;
+    Menu_Button(2, "m9_atmo_balanced", "BALANCED", "Default atmosphere, full particles and decals.") ? Menu_M9_Atmo_Balanced() : 0;
+    Menu_Button(3, "m9_atmo_cinematic", "CINEMATIC", "Dense fog, full particles, full gore.") ? Menu_M9_Atmo_Cinematic() : 0;
+
+    Menu_DrawDivider(3.25);
+
+    Menu_Button(4, "m9_atmo_particles", "PARTICLES", "Toggle ambient dust and particle effects.") ? Menu_M9_Atmo_ToggleParticles() : 0;
+    Menu_DrawOptionValue(4, cvar("nzp_particles") ? "ENABLED" : "DISABLED");
+
+    Menu_Button(5, "m9_atmo_decals", "DECALS", "Toggle bullet holes and blood decals.") ? Menu_M9_Atmo_ToggleDecals() : 0;
+    Menu_DrawOptionValue(5, cvar("nzp_decals") ? "ENABLED" : "DISABLED");
+
+    Menu_Button(6, "m9_atmo_fog", "FOG", "Toggle volumetric fog.") ? Menu_M9_Atmo_ToggleFog() : 0;
+    Menu_DrawOptionValue(6, cvar("nzp_fog_enabled") ? "ENABLED" : "DISABLED");
+
+    Menu_Button(7, "m9_atmo_fog_density", "FOG DENSITY", "Cycle between Performance, Balanced and Cinematic fog.") ? Menu_M9_Atmo_CycleFogDensity() : 0;
+    float fog_start = cvar("r_fog_start");
+    string fog_label = "PERFORMANCE";
+    if (fog_start < 500) fog_label = "CINEMATIC";
+    else if (fog_start < 2048) fog_label = "BALANCED";
+    Menu_DrawOptionValue(7, fog_label);
+
+    Menu_Button(8, "m9_atmo_gore_level", "GORE FILTER", "Toggle gib filter. Disable to see full gore.") ? Menu_M9_Atmo_ToggleGore() : 0;
+    Menu_DrawOptionValue(8, cvar("cl_gibfilter") ? "FILTERED" : "FULL");
+
+    Menu_Button(-1, "m9_atmo_back", "BACK", "Return to Configuration Menu.") ? current_menu = MENU_OPTIONS : 0;
+
+    sui_pop_frame();
+};
+''', encoding="utf-8")
+    print("[OK]   menu_m9_atmo.qc erstellt")
+
+# 9.4 menu_opts.qc patchen (Button einfügen, Nummerierung anpassen)
+patch(MENU_OPTS,
+    'Menu_Button(4, "om_acces", "ACCESSIBILITY", "Content, Interface, and Readability options.") ? current_menu = MENU_ACCESSIBILITY : 0;',
+    'Menu_Button(4, "om_acces", "ACCESSIBILITY", "Content, Interface, and Readability options.") ? current_menu = MENU_ACCESSIBILITY : 0;\n    Menu_Button(5, "om_m9atmo", "ATMOSPHERE & GORE", "Fog, particles and gore options.") ? current_menu = MENU_M9_ATMO : 0;',
+    "Options: Atmosphere & Gore Button einfügen",
+    '"om_m9atmo"')
+
+patch(MENU_OPTS,
+    'Menu_DrawDivider(5);',
+    'Menu_DrawDivider(6);',
+    "Options: Divider auf Position 6 verschieben",
+    'Menu_DrawDivider(6);')
+
+patch(MENU_OPTS,
+    'Menu_Button(5.25, "om_console"',
+    'Menu_Button(6.25, "om_console"',
+    "Options: Console-Button auf Position 6.25 verschieben",
+    'Menu_Button(6.25, "om_console"')
+
+# 9.5 .src-Dateien erweitern
+for src_path in [PROGS / "menu.src", PROGS / "csqc.src"]:
+    if src_path.exists():
+        content = src_path.read_text(encoding="utf-8")
+        if "menu_m9_atmo.qc" not in content and "menu_opts.qc" in content:
+            content = content.replace("menu_opts.qc", "menu_m9_atmo.qc\nmenu_opts.qc", 1)
+            src_path.write_text(content, encoding="utf-8")
+            print(f"[OK]   {src_path.name}: menu_m9_atmo.qc eingebunden")
 
 print("\n=== Alle Patches erfolgreich angewendet (idempotent). ===")
 sys.exit(0)
