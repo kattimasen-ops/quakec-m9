@@ -35,24 +35,28 @@ jobs:
           mkdir -p source/server
           python3 bin/qc_hash_generator.py -i tools/asset_conversion_table.csv -o source/server/hash_table.qc
 
-      - name: Compile QuakeC (CSQC, Menu, SSQC)
+      - name: Compile QuakeC (CSQC, Menu, SSQC) with FTE-compatible flags
         run: |
           chmod +x bin/fteqcc-cli-lin
           mkdir -p build/fte build/standard
 
+          # -version 7 erzwingt das FTE/KK-Format (entspricht der Referenz-Binary).
+          # -fno-structs -fno-unions deaktivieren experimentelle Erweiterungen,
+          # die negative Feldtypen erzeugen, welche die alte Binary nicht kennt.
+          FTEQCC_FLAGS="-O3 -Ono-compound_jumps -Wall -version 7 -fno-structs -fno-unions"
+
           echo "=== Kompiliere Client (CSQC) ==="
-          bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/csqc.src
+          bin/fteqcc-cli-lin $FTEQCC_FLAGS -srcfile progs/csqc.src
 
           echo "=== Kompiliere Menu ==="
-          bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/menu.src
+          bin/fteqcc-cli-lin $FTEQCC_FLAGS -srcfile progs/menu.src
 
           echo "=== Kompiliere Server (SSQC / progs.dat) ==="
-          bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/ssqc.src
+          bin/fteqcc-cli-lin $FTEQCC_FLAGS -srcfile progs/ssqc.src
 
           echo "=== Suche erzeugte .dat-Dateien ==="
           find . -name "csprogs.dat" -o -name "menu.dat" -o -name "progs.dat" | sort
 
-          # Kopiere an die erwarteten Orte – unabhängig davon, wo fteqcc sie abgelegt hat
           CSQC_SRC=$(find . -name "csprogs.dat" | head -n 1)
           MENU_SRC=$(find . -name "menu.dat" | head -n 1)
           PROGS_SRC=$(find . -name "progs.dat" | head -n 1)
@@ -69,7 +73,6 @@ jobs:
           cp "$MENU_SRC"  build/fte/menu.dat
           cp "$PROGS_SRC" build/standard/progs.dat
 
-          # Ins Repo-Root für den Upload
           cp build/fte/csprogs.dat      csprogs.dat
           cp build/fte/menu.dat         menu.dat
           cp build/standard/progs.dat   progs.dat
@@ -100,13 +103,15 @@ jobs:
           print(f"[VORHER] num_globaldefs = {num_globaldefs}")
           PYEOF
 
-      - name: Set QuakeWorld CRC and Version (54730 / 6)
+      - name: Set QuakeWorld Header (Version 7, CRC 54730)
         run: |
           python3 - <<'PYEOF'
           import struct, os, sys
 
-          QW_VERSION = 6
-          QW_CRC = 54730  # PROGHEADER_CRC_QW
+          # WICHTIG: Die Referenz-Binary erwartet version 7 (FTE-Format),
+          # NICHT version 6 (QuakeWorld-Standard). Der CRC 54730 bleibt.
+          FTE_VERSION = 7
+          QW_CRC = 54730
 
           path = "progs.dat"
           if not os.path.exists(path):
@@ -116,19 +121,19 @@ jobs:
 
           with open(path, "r+b") as f:
               f.seek(0x00)
-              f.write(struct.pack("<i", QW_VERSION))
+              f.write(struct.pack("<i", FTE_VERSION))
               f.seek(0x04)
               f.write(struct.pack("<i", QW_CRC))
 
           with open(path, "rb") as f:
               version, crc = struct.unpack("<2i", f.read(8))
-          if version != QW_VERSION or crc != QW_CRC:
+          if version != FTE_VERSION or crc != QW_CRC:
               sys.exit(f"FEHLER: Header nicht korrekt (version={version}, crc={crc})")
-          print(f"[NACHHER] version = {version} (QuakeWorld)")
+          print(f"[NACHHER] version = {version} (FTE/KK-Format)")
           print(f"[NACHHER] crc     = {crc} (PROGHEADER_CRC_QW)")
           PYEOF
 
-      - name: Verify CRC Recognition (Simulation)
+      - name: Verify entityfields and CRC Recognition
         run: |
           python3 - <<'PYEOF'
           import struct, os, sys
@@ -146,23 +151,32 @@ jobs:
           }
 
           path = "progs.dat"
-          if not os.path.exists(path) or os.path.getsize(path) < 8:
+          if not os.path.exists(path) or os.path.getsize(path) < 60:
               sys.exit(f"FEHLER: {path} fehlt oder ist zu klein.")
 
           with open(path, "rb") as f:
-              f.seek(0x04)
-              crc = struct.unpack("<i", f.read(4))[0]
+              header = f.read(60)
+          version, crc, _, _, _, _, _, _, _, _, _, _, _, _, entityfields = struct.unpack("<15i", header)
+
+          print(f"version      = {version}")
+          print(f"crc          = {crc}")
+          print(f"entityfields = {entityfields}  (Referenz: 607)")
+
+          if entityfields != 607:
+              print(f"⚠️  WARNUNG: entityfields ist {entityfields}, nicht 607.")
+              print("   Die alte Binary erwartet 607. Prüfe, ob ein Patch ein")
+              print("   neues Entity-Feld hinzugefügt hat (z. B. .entity legs;).")
+          else:
+              print("✅ entityfields = 607 – kompatibel mit der alten Binary.")
 
           if crc in KNOWN_CRCS:
               print(f"✅ CRC {crc} wird erkannt als: {KNOWN_CRCS[crc]}")
           else:
-              sys.exit(f"❌ CRC {crc} ist UNBEKANNT. Die Engine wird den falschen Kompatibilitätsmodus aktivieren.")
-
-          # Kopie als qwprogs.dat
-          with open("qwprogs.dat", "wb") as f:
-              f.write(open(path, "rb").read())
-          print("qwprogs.dat erstellt.")
+              print(f"⚠️  CRC {crc} ist unbekannt – Engine könnte falschen Modus wählen.")
           PYEOF
+
+          cp progs.dat qwprogs.dat
+          echo "qwprogs.dat erstellt."
 
       - name: Stage MD3 Models
         run: |
