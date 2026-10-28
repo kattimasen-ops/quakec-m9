@@ -1,25 +1,29 @@
 #!/usr/bin/env python3
 # Vergleicht zwei Quake-`.dat`-Dateien (dprograms_t-Format) feldgenau.
-# Ziel: Absturzursachen beim Map-Load identifizieren (entityfields,
-# sys_fields, sys_globals, Statement-Anzahl).
+# Fokus: entityfields, sys_fields, sys_globals, Statement-Anzahl,
+# neue Felder/Globals vor end_sys_fields (typische Absturzursache).
 
 import struct
 import sys
 import os
 
-# Feldtypen (Quake-Standard + FTE-Erweiterungen)
 EV_NAMES = {
     0: "ev_void", 1: "ev_string", 2: "ev_float", 3: "ev_vector",
     4: "ev_entity", 5: "ev_field", 6: "ev_function", 7: "ev_pointer",
     8: "ev_integer", 9: "ev_quaternion", 10: "ev_double",
     11: "ev_nativefunction", 12: "ev_float32", 13: "ev_float64",
+    14: "ev_float32b", 15: "ev_float64b", 16: "ev_entityb",
+    17: "ev_float3b",
 }
+
+def type_name(t):
+    return EV_NAMES.get(t, f"ev_unknown({t})")
 
 def parse_progs(path):
     with open(path, "rb") as f:
         data = f.read()
     if len(data) < 60:
-        raise ValueError(f"{path} ist zu klein für einen Header ({len(data)} Bytes)")
+        raise ValueError(f"{path}: nur {len(data)} Bytes – Header unvollständig (min. 60)")
 
     h = struct.unpack("<15i", data[:60])
     p = {
@@ -27,22 +31,15 @@ def parse_progs(path):
         "size": len(data),
         "version": h[0],
         "crc": h[1],
-        "ofs_statements": h[2],
-        "num_statements": h[3],
-        "ofs_globaldefs": h[4],
-        "num_globaldefs": h[5],
-        "ofs_fielddefs": h[6],
-        "num_fielddefs": h[7],
-        "ofs_functions": h[8],
-        "num_functions": h[9],
-        "ofs_strings": h[10],
-        "num_strings": h[11],
-        "ofs_globals": h[12],
-        "num_globals": h[13],
-        "entityfields": h[14],
+        "ofs_statements": h[2],  "num_statements": h[3],
+        "ofs_globaldefs": h[4],  "num_globaldefs": h[5],
+        "ofs_fielddefs":  h[6],  "num_fielddefs":  h[7],
+        "ofs_functions":  h[8],  "num_functions":  h[9],
+        "ofs_strings":    h[10], "num_strings":    h[11],
+        "ofs_globals":    h[12], "num_globals":    h[13],
+        "entityfields":   h[14],
     }
 
-    # Strings
     raw = data[p["ofs_strings"]:p["ofs_strings"] + p["num_strings"]]
     p["strings"] = raw.decode("latin-1").split("\0")
 
@@ -53,7 +50,7 @@ def parse_progs(path):
             if off + 8 > len(data):
                 break
             type_, ofs, s_name = struct.unpack("<hhi", data[off:off+8])
-            name = p["strings"][s_name] if 0 <= s_name < len(p["strings"]) else f"<invalid:{s_name}>"
+            name = p["strings"][s_name] if 0 <= s_name < len(p["strings"]) else f"<inv:{s_name}>"
             out.append({"type": type_, "ofs": ofs, "name": name})
         return out
 
@@ -67,146 +64,165 @@ def find_marker(defs, marker):
             return i
     return None
 
-def fmt_type(t):
-    return EV_NAMES.get(t, f"type_{t}")
-
-def compare(ref, cur):
-    out = []
-    out.append("=" * 78)
-    out.append(f"REFERENZ (funktionierend): {ref['path']}")
-    out.append(f"AKTUELL   (stürzt ab):     {cur['path']}")
-    out.append("=" * 78)
-
-    # 1) Header-Werte
-    out.append("\n--- HEADER ---")
-    out.append(f"{'Feld':<20} {'Referenz':>15} {'Aktuell':>15} {'Differenz':>12}")
-    out.append("-" * 66)
-    for key in ["size", "version", "crc", "num_statements", "num_globaldefs",
-                "num_fielddefs", "num_functions", "num_strings", "num_globals",
-                "entityfields"]:
-        r, c = ref[key], cur[key]
-        diff = c - r
-        marker = "  <<< ABWEICHUNG" if r != c else ""
-        out.append(f"{key:<20} {r:>15} {c:>15} {diff:>+12}{marker}")
-
-    # 2) entityfields ist der kritischste Wert
-    out.append("\n--- KRITISCH: entityfields (Größe der Entity-Struktur) ---")
-    if ref["entityfields"] != cur["entityfields"]:
-        out.append(f"  REFERENZ: {ref['entityfields']} Felder")
-        out.append(f"  AKTUELL:  {cur['entityfields']} Felder")
-        out.append("  ❌ UNTERSCHIED! Die Engine allokiert Entities mit dieser Anzahl.")
-        out.append("     Wenn die alte Binary gegen eine andere Größe kompiliert wurde,")
-        out.append("     greift sie auf Offsets zu, die außerhalb des allozierten Speichers liegen.")
-    else:
-        out.append(f"  ✅ Identisch ({ref['entityfields']} Felder)")
-
-    # 3) sys_fields
-    out.append("\n--- SYSTEM-FELDER (vor end_sys_fields) ---")
+def diff_sys_fields(ref, cur, out):
+    out.append("\n--- SYSTEM-FELDER (bis inkl. end_sys_fields) ---")
     r_idx = find_marker(ref["fielddefs"], "end_sys_fields")
     c_idx = find_marker(cur["fielddefs"], "end_sys_fields")
-    out.append(f"  end_sys_fields: Referenz={r_idx}, Aktuell={c_idx}")
-    if r_idx is None or c_idx is None:
-        out.append("  ❌ end_sys_fields nicht gefunden – Datei ist unvollständig oder korrupt.")
-    elif r_idx != c_idx:
-        out.append(f"  ❌ Anzahl der System-Felder weicht ab ({r_idx} vs. {c_idx}).")
-        out.append("     Das verschiebt ALLE Builtin-Feldzugriffe der Engine.")
-    else:
-        out.append(f"  ✅ Anzahl identisch ({r_idx} Felder)")
-        mismatches = 0
-        for i in range(r_idx + 1):
-            rf, cf = ref["fielddefs"][i], cur["fielddefs"][i]
-            if (rf["name"], rf["type"], rf["ofs"]) != (cf["name"], cf["type"], cf["ofs"]):
-                mismatches += 1
-                if mismatches <= 10:
-                    out.append(f"  ❌ [{i}] Ref={rf['name']}/{fmt_type(rf['type'])}/ofs={rf['ofs']}"
-                               f"  Cur={cf['name']}/{fmt_type(cf['type'])}/ofs={cf['ofs']}")
-        if mismatches == 0:
-            out.append("  ✅ Alle System-Felder identisch (Name, Typ, Offset).")
-        else:
-            out.append(f"  ❌ {mismatches} abweichende System-Felder!")
+    out.append(f"  end_sys_fields Position: Referenz={r_idx}, Aktuell={c_idx}")
 
-    # 4) sys_globals
-    out.append("\n--- SYSTEM-GLOBALS (vor end_sys_globals) ---")
+    if r_idx is None or c_idx is None:
+        out.append("  ❌ end_sys_fields nicht gefunden – Datei unvollständig oder korrupt.")
+        return False
+
+    if r_idx != c_idx:
+        out.append(f"  ❌ ANZAHL UNTERSCHIEDLICH: {r_idx + 1} vs {c_idx + 1}")
+        out.append("     Jedes zusätzliche/fehlende Feld verschiebt alle nachfolgenden Offsets.")
+        return False
+
+    out.append(f"  ✅ Anzahl identisch ({r_idx + 1} Felder)")
+    bad = []
+    for i in range(r_idx + 1):
+        rf, cf = ref["fielddefs"][i], cur["fielddefs"][i]
+        if (rf["name"], rf["type"], rf["ofs"]) != (cf["name"], cf["type"], cf["ofs"]):
+            bad.append((i, rf, cf))
+    if not bad:
+        out.append("  ✅ Alle Felder identisch (Name, Typ, Offset).")
+        return True
+
+    out.append(f"  ❌ {len(bad)} abweichende Felder:")
+    for i, rf, cf in bad[:25]:
+        out.append(f"    [{i:>3}] Ref: {rf['name']:<28} {type_name(rf['type']):<15} ofs={rf['ofs']}")
+        out.append(f"          Cur: {cf['name']:<28} {type_name(cf['type']):<15} ofs={cf['ofs']}")
+    if len(bad) > 25:
+        out.append(f"    ... ({len(bad) - 25} weitere)")
+    return False
+
+def diff_sys_globals(ref, cur, out):
+    out.append("\n--- SYSTEM-GLOBALS (bis inkl. end_sys_globals) ---")
     r_g = find_marker(ref["globaldefs"], "end_sys_globals")
     c_g = find_marker(cur["globaldefs"], "end_sys_globals")
-    out.append(f"  end_sys_globals: Referenz={r_g}, Aktuell={c_g}")
+    out.append(f"  end_sys_globals Position: Referenz={r_g}, Aktuell={c_g}")
     if r_g is None or c_g is None:
         out.append("  ❌ end_sys_globals nicht gefunden.")
-    elif r_g != c_g:
-        out.append(f"  ❌ Anzahl der System-Globals weicht ab ({r_g} vs. {c_g}).")
+        return False
+    if r_g != c_g:
+        out.append(f"  ❌ Anzahl unterschiedlich: {r_g + 1} vs {c_g + 1}")
+        return False
+    out.append(f"  ✅ Anzahl identisch ({r_g + 1} Globals)")
+    bad = 0
+    for i in range(r_g + 1):
+        rg, cg = ref["globaldefs"][i], cur["globaldefs"][i]
+        if (rg["name"], rg["type"], rg["ofs"]) != (cg["name"], cg["type"], cg["ofs"]):
+            bad += 1
+            if bad <= 10:
+                out.append(f"    [{i:>3}] Ref: {rg['name']:<25} ofs={rg['ofs']}")
+                out.append(f"          Cur: {cg['name']:<25} ofs={cg['ofs']}")
+    if bad == 0:
+        out.append("  ✅ Alle System-Globals identisch.")
     else:
-        out.append(f"  ✅ Anzahl identisch ({r_g} Globals)")
+        out.append(f"  ❌ {bad} abweichende System-Globals.")
+    return bad == 0
 
-    # 5) Neue Felder in der aktuellen Datei (typischer Patch-Verdacht)
-    out.append("\n--- NEUE FELDER in der aktuellen Datei (nicht in Referenz) ---")
+def list_new_fields(ref, cur, out):
+    out.append("\n--- NEUE FELDER in progs.dat (nicht in qwprogs.dat.bak) ---")
     ref_names = {d["name"] for d in ref["fielddefs"]}
-    new_fields = [d for d in cur["fielddefs"] if d["name"] not in ref_names]
-    if not new_fields:
+    new = [d for d in cur["fielddefs"] if d["name"] not in ref_names]
+    if not new:
         out.append("  (keine)")
-    else:
-        for d in new_fields[:30]:
-            pos = cur["fielddefs"].index(d)
-            in_sys = c_idx is not None and pos <= c_idx
-            warn = "  <<< VOR end_sys_fields!" if in_sys else ""
-            out.append(f"  + {d['name']:<30} {fmt_type(d['type']):<12} ofs={d['ofs']:<5}{warn}")
-        out.append(f"  Gesamt: {len(new_fields)} neue Felder")
+        return
+    c_idx = find_marker(cur["fielddefs"], "end_sys_fields")
+    for d in new:
+        pos = cur["fielddefs"].index(d)
+        in_sys = c_idx is not None and pos <= c_idx
+        warn = "  <<< VOR end_sys_fields!" if in_sys else ""
+        out.append(f"  + {d['name']:<30} {type_name(d['type']):<15} ofs={d['ofs']:<5}{warn}")
+    out.append(f"  Gesamt: {len(new)} neue Felder")
 
-    # 6) Neue Globals
-    out.append("\n--- NEUE GLOBALS in der aktuellen Datei ---")
-    ref_g_names = {g["name"] for g in ref["globaldefs"]}
-    new_globals = [g for g in cur["globaldefs"] if g["name"] not in ref_globals := ref_g_names]
-    if not new_globals:
+def list_new_globals(ref, cur, out):
+    out.append("\n--- NEUE GLOBALS in progs.dat (nicht in qwprogs.dat.bak) ---")
+    ref_names = {g["name"] for g in ref["globaldefs"]}
+    new = [g for g in cur["globaldefs"] if g["name"] not in ref_names]
+    if not new:
         out.append("  (keine)")
-    else:
-        for g in new_globals[:30]:
-            pos = cur["globaldefs"].index(g)
-            in_sys = c_g is not None and pos <= c_g
-            warn = "  <<< VOR end_sys_globals!" if in_sys else ""
-            out.append(f"  + {g['name']:<30} {fmt_type(g['type']):<12} ofs={g['ofs']:<5}{warn}")
-        out.append(f"  Gesamt: {len(new_globals)} neue Globals")
+        return
+    c_g = find_marker(cur["globaldefs"], "end_sys_globals")
+    for g in new:
+        pos = cur["globaldefs"].index(g)
+        in_sys = c_g is not None and pos <= c_g
+        warn = "  <<< VOR end_sys_globals!" if in_sys else ""
+        out.append(f"  + {g['name']:<30} {type_name(g['type']):<15} ofs={g['ofs']:<5}{warn}")
+    out.append(f"  Gesamt: {len(new)} neue Globals")
 
-    # 7) Unbekannte Feldtypen (FTE-spezifisch für alte Binary?)
+def list_unknown_types(cur, out):
     out.append("\n--- UNBEKANNTE FELDTYPEN (nicht in Standard-Liste) ---")
-    unknown = set()
-    for d in cur["fielddefs"] + cur["globaldefs"]:
-        if d["type"] not in EV_NAMES:
-            unknown.add(d["type"])
+    unknown = sorted({d["type"] for d in cur["fielddefs"] + cur["globaldefs"]
+                      if d["type"] not in EV_NAMES})
     if not unknown:
-        out.append("  (keine – alle Typen sind Standard/FTE-bekannt)")
-    else:
-        for t in sorted(unknown):
-            out.append(f"  ❌ Typ {t} ist unbekannt. Die alte Binary kennt ihn möglicherweise nicht.")
-
-    return "\n".join(out)
+        out.append("  ✅ (keine)")
+        return
+    for t in unknown:
+        out.append(f"  ❌ Typ {t} (numerisch) – alte Binary kennt ihn möglicherweise nicht")
 
 def main():
     if len(sys.argv) != 3:
-        sys.exit("Aufruf: compare_progs.py <referenz.dat> <aktuell.dat>")
-    ref_path, cur_path = sys.argv[1], sys.argv[2]
-    for p in (ref_path, cur_path):
+        sys.exit("Aufruf: compare_progs.py <aktuell.dat> <referenz.dat>")
+
+    cur_path, ref_path = sys.argv[1], sys.argv[2]
+    for p in (cur_path, ref_path):
         if not os.path.exists(p):
             sys.exit(f"FEHLER: {p} fehlt.")
 
     ref = parse_progs(ref_path)
     cur = parse_progs(cur_path)
 
-    report = compare(ref, cur)
-    print(report)
+    out = []
+    out.append("=" * 78)
+    out.append(f"REFERENZ (funktioniert): {ref_path}   {ref['size']} Bytes")
+    out.append(f"AKTUELL   (stürzt ab):   {cur_path}   {cur['size']} Bytes")
+    out.append(f"Größen-Differenz:        {cur['size'] - ref['size']:+d} Bytes")
+    out.append("=" * 78)
 
-    # Kritische Fehler: entityfields-Differenz oder sys_fields-Verschiebung
-    r_idx = find_marker(ref["fielddefs"], "end_sys_fields")
-    c_idx = find_marker(cur["fielddefs"], "end_sys_fields")
-    critical = (
-        ref["entityfields"] != cur["entityfields"]
-        or r_idx != c_idx
-        or r_idx is None or c_idx is None
-    )
-    if critical:
-        print("\n❌ KRITISCHE ABWEICHUNG – dieser Fehler erklärt den Map-Load-Absturz.")
-        sys.exit(1)
+    out.append("\n--- HEADER ---")
+    out.append(f"{'Feld':<20} {'Referenz':>15} {'Aktuell':>15} {'Diff':>10}")
+    out.append("-" * 62)
+    for key in ["size", "version", "crc", "num_statements", "num_globaldefs",
+                "num_fielddefs", "num_functions", "num_strings", "num_globals",
+                "entityfields"]:
+        r, c = ref[key], cur[key]
+        diff = c - r
+        mark = "  <<<" if r != c else ""
+        out.append(f"{key:<20} {r:>15} {c:>15} {diff:>+10}{mark}")
+
+    out.append("\n--- KRITISCH: entityfields ---")
+    if ref["entityfields"] != cur["entityfields"]:
+        out.append(f"  ❌ UNTERSCHIED: {ref['entityfields']} vs {cur['entityfields']}")
+        out.append("     Die alte Binary allokiert Entities mit der Referenz-Größe.")
+        out.append("     Jede Abweichung führt zu Speicherzugriffen außerhalb des Puffers.")
     else:
-        print("\n✅ Keine kritische Abweichung gefunden.")
-        sys.exit(0)
+        out.append(f"  ✅ Identisch: {ref['entityfields']}")
+
+    sys_fields_ok = diff_sys_fields(ref, cur, out)
+    sys_globals_ok = diff_sys_globals(ref, cur, out)
+    list_new_fields(ref, cur, out)
+    list_new_globals(ref, cur, out)
+    list_unknown_types(cur, out)
+
+    out.append("\n" + "=" * 78)
+    out.append("ZUSAMMENFASSUNG")
+    out.append("=" * 78)
+    critical = (ref["entityfields"] != cur["entityfields"]) or (not sys_fields_ok) or (not sys_globals_ok)
+    if critical:
+        out.append("❌ KRITISCHE ABWEICHUNG gefunden – das erklärt den Absturz beim Map-Load.")
+        out.append("   Die Binary erwartet eine bestimmte Entity-Struktur; die aktuelle Datei")
+        out.append("   liefert eine andere. → Patch muss Felder nach end_sys_fields verschieben")
+        out.append("   oder die Binary mit angepasster entityfields-Größe neu kompilieren.")
+    else:
+        out.append("✅ Keine kritischen Abweichungen im Header oder den System-Definitionen.")
+        out.append("   Ursache liegt woanders (z. B. Statement-Format, Builtin-Nummern,")
+        out.append("   oder unterschiedliche Compiler-Optionen).")
+
+    report = "\n".join(out)
+    print(report)
 
 if __name__ == "__main__":
     main()
