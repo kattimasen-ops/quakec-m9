@@ -4,10 +4,8 @@
 # auswählbar ist, behebt überlappende Buttons im Video-Menü und
 # die serverseitigen Crash-Ursachen.
 #
-# WICHTIG: Die kompilierte progs.dat MUSS anschließend mit dem
-# QuakeWorld-CRC (54730) versehen werden, damit die alte Binary sie
-# im korrekten Kompatibilitätsmodus lädt. Das übernimmt der Schritt
-# "Set QuakeWorld CRC in progs.dat" in build-csprogs.yml.
+# BEIN-DISMEMBERMENT: Rein serverseitig über Z-Höhen-Prüfung + makeCrawler().
+# KEIN neues Entity-Feld, damit entityfields bei 607 bleibt.
 
 import sys
 import re
@@ -160,7 +158,6 @@ string(string next_id) Menu_M9_Atmo_GetPreviousButton;
 void() _sui_menukey_downarrow ="""
 patch(SUI_SYS, SUI_FORWARD_ANCHOR, SUI_FORWARD_REPLACEMENT, "SUI Forward", "Forward-Deklarationen")
 
-# Downarrow: MENU_M9_ATMO Case
 DOWNARROW_PATTERN = r'(void\s*\(\s*\)\s*_sui_menukey_downarrow\s*=\s*\{[\s\S]*?string\s+current_hovered_option\s*=\s*_hover_actions\s*\[\s*0\s*\]\s*;)'
 DOWNARROW_REPLACEMENT = r'''\1
 	if (current_menu == MENU_COOPBROWSE) {
@@ -174,7 +171,6 @@ DOWNARROW_REPLACEMENT = r'''\1
 	}'''
 patch_regex(SUI_SYS, DOWNARROW_PATTERN, DOWNARROW_REPLACEMENT, "Downarrow M9-ATMO", "Menu_M9_Atmo_GetNextButton(current_hovered_option)")
 
-# Uparrow: MENU_M9_ATMO Case
 UPARROW_PATTERN = r'(void\s*\(\s*\)\s*_sui_menukey_uparrow\s*=\s*\{[\s\S]*?string\s+current_hovered_option\s*=\s*_hover_actions\s*\[\s*0\s*\]\s*;)'
 UPARROW_REPLACEMENT = r'''\1
 	if (current_menu == MENU_COOPBROWSE) {
@@ -197,7 +193,7 @@ AB_REPLACEMENT = r'''\1
 patch_regex(SUI_SYS, AB_PATTERN, AB_REPLACEMENT, "A/B-Swap", "// NZP-M9: A = Zurueck")
 
 # ==========================================
-# TEIL 3: VIDEO-MENÜ (Überlappung der Apply/Back-Buttons beheben)
+# TEIL 3: VIDEO-MENÜ
 # ==========================================
 if MENU_VIDE.exists():
     content = MENU_VIDE.read_text(encoding="utf-8")
@@ -287,7 +283,6 @@ void() Menu_Video =
         MENU_VIDE.write_text(new_content, encoding="utf-8")
         print("[OK]   Menu_Video (Apply/Back korrekt positioniert)")
 
-# Falls das Menü bereits gepatcht wurde, aber noch die alten Koordinaten (-2/-1) hat:
 patch(MENU_VIDE,
     """    Menu_Button(-2, "vm_apply", "APPLY", "Save & Apply Settings.") ? Menu_Video_ApplySettings() : 0;
     Menu_Button(-1, "vm_back", "BACK", "Return to Configuration Menu.") ? current_menu = MENU_OPTIONS : 0;""",
@@ -496,8 +491,16 @@ patch(POWERUPS_QC, MAXAMMO_TOAST_ANCHOR, MAXAMMO_TOAST_REPLACEMENT,
       "Max Ammo Toast deaktivieren", "// NZP-M9 FIX: Max Ammo Toast deaktivieren")
 
 # ==========================================
-# TEIL 7: BEIN-DISMEMBERMENT (Crawler-Transformation)
+# TEIL 7: BEIN-DISMEMBERMENT (server-seitig, KEIN neues Feld)
 # ==========================================
+# WICHTIG: Wir fügen KEIN .entity legs; hinzu. Wir nutzen das bereits
+# existierende .crawling-Feld und die existierende makeCrawler()-Funktion.
+# Der Server prüft die Z-Höhe des Treffers: Liegt er im Beinbereich,
+# wird makeCrawler() aufgerufen. Kein neues Entity-Feld → entityfields bleibt 607.
+#
+# Die Forward-Deklaration für makeCrawler wird beibehalten, falls sie in
+# weapon_core.qc fehlt (makeCrawler existiert im NZP-Code bereits).
+
 MAKECRAWLER_FWD_ANCHOR = """void() W_PutOut;
 float(entity who, float weapon) Zombie_HeadCanGib;"""
 MAKECRAWLER_FWD_REPLACEMENT = """void() W_PutOut;
@@ -506,103 +509,9 @@ void(entity who) makeCrawler;"""
 patch(WEAPON_CORE_QC, MAKECRAWLER_FWD_ANCHOR, MAKECRAWLER_FWD_REPLACEMENT,
       "makeCrawler Forward-Deklaration", "void(entity who) makeCrawler;")
 
-ensure_line(SERVER_CUSTOM_QC, ".entity legs;", "legs Entity-Feld")
-
-LEGS_SPAWN_ANCHOR = """	zSpawn.rarm = spawn();
-	zSpawn.rarm.classname = "in_ai_zombie_rarm";
-	zSpawn.rarm.owner = zSpawn;
-	zSpawn.rarm.solid = SOLID_NOT;
-	zSpawn.rarm.movetype = MOVETYPE_STEP;
-	zSpawn.rarm.takedamage = DAMAGE_NO;
-
-#ifndef FTE
-	updateLimb (zSpawn, 2, zSpawn.rarm);
-#endif // FTE
-"""
-LEGS_SPAWN_REPLACEMENT = LEGS_SPAWN_ANCHOR + """
-	// NZP-M9: Bein-Entity
-	zSpawn.legs = spawn();
-	zSpawn.legs.classname = "in_ai_zombie_legs";
-	zSpawn.legs.owner = zSpawn;
-	zSpawn.legs.solid = SOLID_NOT;
-	zSpawn.legs.movetype = MOVETYPE_STEP;
-	zSpawn.legs.takedamage = DAMAGE_NO;
-"""
-patch(ZOMBIE_CORE_QC, LEGS_SPAWN_ANCHOR, LEGS_SPAWN_REPLACEMENT, "Legs spawn", 'zSpawn.legs = spawn();')
-
-LEGS_HITBOX_ANCHOR = """	szombie.rarm.solid = SOLID_CORPSE;
-	szombie.rarm.movetype = MOVETYPE_STEP;
-	szombie.rarm.classname = "ai_zombie_rarm";
-	szombie.rarm.takedamage = DAMAGE_YES;
-"""
-LEGS_HITBOX_REPLACEMENT = LEGS_HITBOX_ANCHOR + """
-	// NZP-M9: Bein-Hitbox (unsichtbar)
-	szombie.legs.solid = SOLID_CORPSE;
-	szombie.legs.movetype = MOVETYPE_STEP;
-	szombie.legs.classname = "ai_zombie_legs";
-	szombie.legs.takedamage = DAMAGE_YES;
-	setsize(szombie.legs, '-8 -8 -32', '8 8 0');
-"""
-patch(ZOMBIE_CORE_QC, LEGS_HITBOX_ANCHOR, LEGS_HITBOX_REPLACEMENT, "Legs hitbox", 'szombie.legs.solid = SOLID_CORPSE;')
-
-ZOMBIE_THINK_ANCHOR = """void() Zombie_Think = //called every frame for zombies
-{
-	if (Zombie_ProcessDistanceDespawn())
-		return;
-"""
-ZOMBIE_THINK_REPLACEMENT = """void() Zombie_Think = //called every frame for zombies
-{
-	if (Zombie_ProcessDistanceDespawn())
-		return;
-
-	// NZP-M9: Bein-Hitbox dem Zombie folgen lassen
-	if (self.legs)
-		setorigin(self.legs, self.origin);
-"""
-patch(ZOMBIE_CORE_QC, ZOMBIE_THINK_ANCHOR, ZOMBIE_THINK_REPLACEMENT, "Legs folgen", "// NZP-M9: Bein-Hitbox dem Zombie folgen lassen")
-
-LEGS_CLEANUP_ANCHOR = """	if (self.classname != "ai_dog") {
-		setmodel(self.larm,"");
-		setmodel(self.rarm,"");
-		setmodel(self.head,"");
-
-#ifdef FTE
-
-		remove(self.larm);
-		remove(self.rarm);
-		remove(self.head);
-
-#else
-
-		updateLimb (self, 0, world);
-		updateLimb (self, 1, world);
-		updateLimb (self, 2, world);
-
-#endif // FTE
-
-	}
-"""
-LEGS_CLEANUP_REPLACEMENT = """	if (self.classname != "ai_dog") {
-		setmodel(self.larm,"");
-		setmodel(self.rarm,"");
-		setmodel(self.head,"");
-		if (self.legs) setmodel(self.legs, "");
-
-#ifdef FTE
-		remove(self.larm);
-		remove(self.rarm);
-		remove(self.head);
-		if (self.legs) remove(self.legs);
-#else
-		updateLimb (self, 0, world);
-		updateLimb (self, 1, world);
-		updateLimb (self, 2, world);
-#endif // FTE
-
-	}
-"""
-patch(ZOMBIE_CORE_QC, LEGS_CLEANUP_ANCHOR, LEGS_CLEANUP_REPLACEMENT, "Legs cleanup", "if (self.legs) setmodel(self.legs, \"\");")
-
+# Z-Höhen-Prüfung: Wird in Parse_Damage eingefügt, wo die Trefferposition
+# (trace_endpos) und der Zombie-Ursprung (body_ent.origin) bekannt sind.
+# Schwellenwert: -18 Einheiten unter dem Ursprung = Beinbereich.
 LEGS_DAMAGE_ANCHOR = """			if (body_ent.rarm.washit) {
 				total_dmg += body_ent.rarm.hitamount;
 				body_ent.rarm.health -= body_ent.rarm.hitamount;
@@ -632,41 +541,50 @@ LEGS_DAMAGE_ANCHOR = """			if (body_ent.rarm.washit) {
 			}
 """
 LEGS_DAMAGE_REPLACEMENT = LEGS_DAMAGE_ANCHOR + """
-			// NZP-M9: Beine (Hitbox-only) - Gib + Crawler-Transformation
-			if (body_ent.legs && body_ent.legs.washit) {
-				total_dmg += body_ent.legs.hitamount;
-				body_ent.legs.health -= body_ent.legs.hitamount;
-
-				if (WepDef_WeaponCanGibEnemy(self.weapon) && body_ent.legs.deadflag) {
-					makevectors(body_ent.legs.owner.angles);
-					where = body_ent.legs.owner.origin
-						+ (body_ent.legs.view_ofs_x * v_right)
-						+ (body_ent.legs.view_ofs_y * v_forward)
-						+ (body_ent.legs.view_ofs_z * v_up);
-					spawn_gibs(where);
-					hit_sound = "sounds/zombie/gib.wav";
-
-					body_ent.legs.deadflag = false;
-					body_ent.legs.solid = SOLID_NOT;
-					setmodel(body_ent.legs, "");
-					body_ent.legs.frame = 0;
-
-					// NZP-M9: Zombie zum Crawler machen
-					if (body_ent.classname == "ai_zombie" && body_ent.health > 0 && body_ent.crawling == 0) {
-						makeCrawler(body_ent);
-					}
+			// NZP-M9: Bein-Treffer über Z-Höhe erkennen (KEIN neues Feld, KEINE neue Entität)
+			// Wenn der Treffer deutlich unter dem Zombie-Ursprung liegt und der Zombie
+			// noch kein Crawler ist, wird makeCrawler() aufgerufen. Der Client
+			// rendert dann das Crawler-Modell (visuell = client-seitig).
+			if (body_ent.classname == "ai_zombie" && body_ent.health > 0 && body_ent.crawling == 0) {
+				float hit_z = trace_endpos_z - body_ent.origin_z;
+				if (hit_z < -18) {
+					makeCrawler(body_ent);
 				}
-
-				body_ent.legs.washit = 0;
-				body_ent.legs.hitamount = 0;
 			}
 """
-patch(WEAPON_CORE_QC, LEGS_DAMAGE_ANCHOR, LEGS_DAMAGE_REPLACEMENT, "Legs Parse_Damage + Crawler", "NZP-M9: Beine (Hitbox-only) - Gib + Crawler-Transformation")
+patch(WEAPON_CORE_QC, LEGS_DAMAGE_ANCHOR, LEGS_DAMAGE_REPLACEMENT,
+      "Bein-Treffer über Z-Höhe -> makeCrawler (kein neues Feld)",
+      "NZP-M9: Bein-Treffer über Z-Höhe erkennen")
+
+# Sicherstellen, dass .entity legs; NICHT existiert (falls ein früherer
+# Patch es hinzugefügt hat, entfernen wir es, damit entityfields bei 607 bleibt).
+if SERVER_CUSTOM_QC.exists():
+    content = SERVER_CUSTOM_QC.read_text(encoding="utf-8")
+    if ".entity legs;" in content:
+        content = content.replace(".entity legs;\n", "").replace(".entity legs;", "")
+        SERVER_CUSTOM_QC.write_text(content, encoding="utf-8")
+        print("[OK]   .entity legs; aus server/defs/custom.qc entfernt (entityfields bleibt 607)")
+
+# Sicherstellen, dass keine Legs-Entität mehr gespawnt wird (falls frühere
+# Patches sie eingefügt haben).
+if ZOMBIE_CORE_QC.exists():
+    content = ZOMBIE_CORE_QC.read_text(encoding="utf-8")
+    # Legs-Spawn entfernen
+    content = re.sub(r"\t// NZP-M9: Bein-Entity\n\tzSpawn\.legs = spawn\(\);\n(\tzSpawn\.legs\.[^\n]*\n)+", "", content)
+    # Legs-Hitbox entfernen
+    content = re.sub(r"\t// NZP-M9: Bein-Hitbox \(unsichtbar\)\n\tszombie\.legs\.solid = SOLID_CORPSE;\n(\tszombie\.legs\.[^\n]*\n)+", "", content)
+    # Legs-folgen entfernen
+    content = re.sub(r"\t// NZP-M9: Bein-Hitbox dem Zombie folgen lassen\n\tif \(self\.legs\)\n\t\tsetorigin\(self\.legs, self\.origin\);\n", "", content)
+    # Legs-Cleanup entfernen
+    content = content.replace("\t\tif (self.legs) setmodel(self.legs, \"\");\n", "")
+    content = content.replace("\t\tif (self.legs) remove(self.legs);\n", "")
+    # Legs-Damage aus weapon_core.qc wird hier nicht behandelt (andere Datei)
+    ZOMBIE_CORE_QC.write_text(content, encoding="utf-8")
+    print("[OK]   Legs-Entitäten aus zombie_core.qc entfernt")
 
 # ==========================================
 # TEIL 8: GORE/ATMOSPHÄRE-MENÜ (MENU_M9_ATMO)
 # ==========================================
-# 8.1 Enum erweitern
 MENU_DEFS_PATTERN = r'(MENU_GAMESETTINGS\s*)\}'
 MENU_DEFS_REPLACEMENT = r'\1, MENU_M9_ATMO }'
 patch_regex(MENU_DEFS, MENU_DEFS_PATTERN, MENU_DEFS_REPLACEMENT, "MENU_M9_ATMO", "MENU_M9_ATMO")
@@ -674,7 +592,6 @@ patch(MENU_DEFS, 'void(float wantmode) m_toggle;',
       'void(float wantmode) m_toggle;\nvoid() Menu_M9_Atmosphere;\nstring(string prev_id) Menu_M9_Atmo_GetNextButton;\nstring(string next_id) Menu_M9_Atmo_GetPreviousButton;',
       "Menu_M9_Atmosphere Forward", "void() Menu_M9_Atmosphere;")
 
-# 8.2 menu_m9_atmo.qc erstellen
 if not MENU_M9_ATMO.exists():
     MENU_M9_ATMO.write_text(r'''// NZP-M9: Atmosphere & Gore Menü
 string menu_m9_atmo_buttons[9] = {
@@ -735,7 +652,6 @@ void() Menu_M9_Atmosphere = {
 };
 ''', encoding="utf-8")
 
-# 8.3 menu_opts.qc: Array + Button (fortlaufende Order!)
 patch(MENU_OPTS,
     'string menu_opts_buttons[6] = {"om_video", "om_audio", "om_binds", "om_acces", "om_console", "om_back"};',
     'string menu_opts_buttons[7] = {"om_video", "om_audio", "om_binds", "om_acces", "om_m9atmo", "om_console", "om_back"};',
@@ -751,7 +667,6 @@ patch(MENU_OPTS,
 patch(MENU_OPTS, 'Menu_DrawDivider(5);', 'Menu_DrawDivider(6);', "Divider", 'Menu_DrawDivider(6);')
 patch(MENU_OPTS, 'Menu_Button(5.25, "om_console"', 'Menu_Button(6.25, "om_console"', "Console-Button", 'Menu_Button(6.25, "om_console"')
 
-# 8.4 In .src-Dateien einbinden
 for src_path in [PROGS / "menu.src", PROGS / "csqc.src"]:
     if src_path.exists():
         content = src_path.read_text(encoding="utf-8")
@@ -761,4 +676,5 @@ for src_path in [PROGS / "menu.src", PROGS / "csqc.src"]:
             print(f"[OK]   {src_path.name}: menu_m9_atmo.qc eingebunden")
 
 print("\n=== Alle Patches erfolgreich angewendet (idempotent). ===")
+print("=== entityfields bleibt bei 607 (kein neues Entity-Feld). ===")
 sys.exit(0)
