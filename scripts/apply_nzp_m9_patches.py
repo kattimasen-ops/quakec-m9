@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-# NZP-M9 Patches – korrigierte Reihenfolge der Forward-Deklarationen.
-# Idempotent. main.qc und sui_sys.qc muessen im offiziellen Zustand sein.
+# NZP-M9 Patches – HUD (ohne Toast), HIT/KILL, Kill-Streak, Atmosphäre,
+# Coop-Browser-Navigation, A/B-Switch, Video-Optionen, Powerups-Runaway-Fix,
+# Video-Menü: Apply/Back nach unten (Standard NZ:P Pattern).
+# Idempotent.
 
 import sys
 import re
@@ -73,14 +75,11 @@ ensure_line(MENU_DEFS, "float last_input_deviceid;", "Füge last_input_deviceid 
 ensure_line(MENU_DEFS, "void(float wantmode) m_toggle;", "Füge m_toggle Deklaration hinzu")
 append_safe(MENU_DEFS, "\n#ifndef MENU\nvoid() Menu_DrawMapPreview = { };\n#endif\n", "Füge menu_defs.qc Dummy hinzu", "void() Menu_DrawMapPreview = { };")
 
-# Credits deaktiviert (Kurzversion)
 if MENU_CRED.exists():
     cred_content = MENU_CRED.read_text(encoding="utf-8")
     if "Credits are currently disabled" not in cred_content:
         MENU_CRED.write_text("void() Menu_Credits = { Menu_DrawBackground(); Menu_DrawTitle(\"CREDITS\"); Menu_DrawMapPanel(); sui_text([150, 100], MENU_TEXT_MEDIUM, \"Credits are currently disabled in this build.\", [1, 1, 1], 1, 0); Menu_Button(-1, \"cr_back\", \"BACK\", \"Return to Main Menu.\") ? current_menu = MENU_MAIN : 0; sui_pop_frame(); };", encoding="utf-8")
         print("[OK]   Credits deaktiviert (Kurzversion)")
-
-patch(CLIENT_MAIN, "float menu_active;", "// float menu_active;", "Entferne doppelte menu_active Definition", "// float menu_active;")
 
 custom_globals = """
 // NZP-M9 Custom Globals
@@ -157,10 +156,8 @@ patch(MENU_COOP,
     "D-Pad UP/DOWN to scroll servers")
 
 # ==========================================
-# TEIL 2: SUI_SYS.QC – Forward-Deklarationen VOR den Handlern
+# TEIL 2: SUI_SYS.QC – NAVIGATION & A/B-SWITCH
 # ==========================================
-# WICHTIG: Die Deklarationen muessen VOR _sui_menukey_downarrow stehen,
-# nicht am Dateiende. Wir fuegen sie direkt vor dem Handler ein.
 SUI_FORWARD_ANCHOR = "void() _sui_menukey_downarrow ="
 SUI_FORWARD_REPLACEMENT = """// ==========================================
 // NZP-M9: Forward-Deklarationen für Coop-Browser-Navigation
@@ -173,7 +170,6 @@ patch(SUI_SYS, SUI_FORWARD_ANCHOR, SUI_FORWARD_REPLACEMENT,
       "SUI: Forward-Deklarationen VOR den Tastenhandlern einfügen",
       "Forward-Deklarationen für Coop-Browser-Navigation")
 
-# Downarrow erweitern
 DOWNARROW_PATTERN = r'(void\s*\(\s*\)\s*_sui_menukey_downarrow\s*=\s*\{[\s\S]*?string\s+current_hovered_option\s*=\s*_hover_actions\s*\[\s*0\s*\]\s*;)'
 DOWNARROW_REPLACEMENT = r'''\1
 	if (current_menu == MENU_COOPBROWSE) {
@@ -184,7 +180,6 @@ patch_regex(SUI_SYS, DOWNARROW_PATTERN, DOWNARROW_REPLACEMENT,
       "C2: Downarrow um Coop-Browser-Navigation erweitern",
       "Menu_Coop_Browse_Navigate(current_hovered_option, 1)")
 
-# Uparrow erweitern
 UPARROW_PATTERN = r'(void\s*\(\s*\)\s*_sui_menukey_uparrow\s*=\s*\{[\s\S]*?string\s+current_hovered_option\s*=\s*_hover_actions\s*\[\s*0\s*\]\s*;)'
 UPARROW_REPLACEMENT = r'''\1
 	if (current_menu == MENU_COOPBROWSE) {
@@ -195,7 +190,6 @@ patch_regex(SUI_SYS, UPARROW_PATTERN, UPARROW_REPLACEMENT,
       "C3: Uparrow um Coop-Browser-Navigation erweitern",
       "Menu_Coop_Browse_Navigate(current_hovered_option, -1)")
 
-# Enter-Handler erweitern
 ENTER_PATTERN = r'(void\s*\(\s*\)\s*_sui_menukey_enter\s*=\s*\{[\s\S]*?if\s*\(\s*_hover_actions\s*\[\s*0\s*\]\s*==\s*""\s*\)[\s\S]*?_sui_menukey_downarrow\s*\(\s*\)\s*;)'
 ENTER_REPLACEMENT = r'''\1
 	if (current_menu == MENU_COOPBROWSE && _hover_actions[0] == "cbm_serverlist") {
@@ -205,7 +199,6 @@ patch_regex(SUI_SYS, ENTER_PATTERN, ENTER_REPLACEMENT,
       "D: Enter um Container-Enter erweitern",
       "Menu_Coop_Browse_EnterContainer())")
 
-# A/B-Swap
 AB_PATTERN = r'(float\s*\(\s*float\s+evtype\s*,\s*float\s+scanx\s*,\s*float\s+chary\s*,\s*float\s+devid\s*\)\s*sui_input_event\s*=\s*\{)'
 AB_REPLACEMENT = r'''\1
 	if (evtype == IE_KEYDOWN || evtype == IE_KEYUP) {
@@ -272,6 +265,7 @@ void() Menu_Video_UpdateBob = { Menu_PlaySound(MENU_SND_ENTER); current_bob = !c
 void() Menu_Video_UpdateUltrawide =''', "E4: Update-Funktionen", "Menu_Video_UpdateDynLight")
 
 if "vm_decal" not in MENU_VIDE.read_text(encoding="utf-8"):
+    # Template für frisch zu patchende Menüs: Apply/Back direkt an -2/-1 Positionen
     menu_video_function = '''
 void() Menu_Video =
 {
@@ -321,9 +315,8 @@ void() Menu_Video =
     Menu_Button(14, "vm_filtr", "TEXTURE FILTERING", "Choose 3D Environment Filtering Mode.") ? Menu_Video_UpdateFiltering() : 0;
     Menu_DrawOptionValue(14, current_filter ? "NEAREST" : "LINEAR");
 
-    Menu_DrawDivider(14.25);
-    Menu_Button(15, "vm_apply", "APPLY", "Save & Apply Settings.") ? Menu_Video_ApplySettings() : 0;
-    Menu_Button(16, "vm_back", "BACK", "Return to Configuration Menu.") ? current_menu = MENU_OPTIONS : 0;
+    Menu_Button(-2, "vm_apply", "APPLY", "Save & Apply Settings.") ? Menu_Video_ApplySettings() : 0;
+    Menu_Button(-1, "vm_back", "BACK", "Return to Configuration Menu.") ? current_menu = MENU_OPTIONS : 0;
 
     sui_pop_frame();	
 };'''
@@ -331,9 +324,19 @@ void() Menu_Video =
     new_content, count = re.subn(r"void\(\) Menu_Video\s*=\s*\{.*?\n\};", menu_video_function, content, count=1, flags=re.DOTALL)
     if count >= 1:
         MENU_VIDE.write_text(new_content, encoding="utf-8")
-        print("[OK]   E5: Menu_Video überschreiben")
+        print("[OK]   E5: Menu_Video überschreiben (Apply/Back bei -2/-1)")
     else:
         print("[WARN] E5: Menu_Video Anker nicht gefunden")
+
+# Fix für bereits gepatchte Menüs mit alten Button-Positionen (15, 16)
+patch(MENU_VIDE,
+    """    Menu_DrawDivider(14.25);
+    Menu_Button(15, "vm_apply", "APPLY", "Save & Apply Settings.") ? Menu_Video_ApplySettings() : 0;
+    Menu_Button(16, "vm_back", "BACK", "Return to Configuration Menu.") ? current_menu = MENU_OPTIONS : 0;""",
+    """    Menu_Button(-2, "vm_apply", "APPLY", "Save & Apply Settings.") ? Menu_Video_ApplySettings() : 0;
+    Menu_Button(-1, "vm_back", "BACK", "Return to Configuration Menu.") ? current_menu = MENU_OPTIONS : 0;""",
+    "FIX: Video-Menü Apply/Back nach unten verlegen (Standard NZ:P Pattern)",
+    'Menu_Button(-2, "vm_apply"')
 
 patch(MAIN_QC, 'build_datetime = fgets(file);', 'build_datetime = "M9 Pro Custom Build";\n        // build_datetime = fgets(file);', "Custom Version String", "M9 Pro Custom Build")
 
@@ -369,7 +372,7 @@ patch(CLIENT_MAIN, "void(float apiver, string enginename, float enginever) CSQC_
     "Initialisiere Variablen in CSQC_Init", "// NZP-M9 Initialisierungen")
 
 # ==========================================
-# TEIL 5: CSQC_Parse_Event – POWERUPTOAST
+# TEIL 5: CSQC_Parse_Event – POWERUPTOAST (Netzwerk-Sync)
 # ==========================================
 PARSE_PATTERN = r'(case\s+CSQC_EVENT_BROADCASTMESSAGE\s*:\s*broadcast_type\s*=\s*readbyte\s*\(\s*\)\s*;\s*broadcast_time\s*=\s*time\s*\+\s*5\s*;\s*broadcast_num\s*=\s*readbyte\s*\(\s*\)\s*;\s*break\s*;)'
 PARSE_REPLACEMENT = r'''\1
@@ -379,11 +382,11 @@ PARSE_REPLACEMENT = r'''\1
 			hud_toast_endtime = time + 3;
 			break;'''
 patch_regex(CLIENT_MAIN, PARSE_PATTERN, PARSE_REPLACEMENT,
-    "CSQC_Parse_Event: POWERUPTOAST-Case hinzufügen",
+    "CSQC_Parse_Event: POWERUPTOAST-Case hinzufügen (Netzwerk-Sync)",
     "case CSQC_EVENT_POWERUPTOAST:")
 
 # ==========================================
-# TEIL 6: ATMOSPHÄRE-FUNKTIONEN (VOR CSQC_UpdateView)
+# TEIL 6: ATMOSPHÄRE-FUNKTIONEN
 # ==========================================
 ATMO_FUNCS = """
 // ==========================================
@@ -442,7 +445,7 @@ patch(CLIENT_MAIN, "noref void(float width, float height, float menushown) CSQC_
     "float() CSQC_IsIndoor =")
 
 # ==========================================
-# TEIL 7: HUD + HIT/KILL + KILL-STREAK + TOAST
+# TEIL 7: HUD (OHNE Toast – behebt Kollision mit Kill-Streak)
 # ==========================================
 HUD_ADDITION = """	// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
 	CSQC_UpdateAtmosphere();
@@ -555,28 +558,23 @@ HUD_ADDITION = """	// NZP-M9: Atmosphäre vor dem Rendern aktualisieren
 			sui_text([0, -120], MENU_TEXT_LARGE, kill_streak_text, [1, 0.5, 0], 1, 0);
 		}
 
-		if (time < hud_toast_endtime && hud_toast_string != "") {
-			float toast_alpha = 1;
-			if (hud_toast_endtime - time < 1) toast_alpha = hud_toast_endtime - time;
-			sui_set_align([SUI_ALIGN_CENTER, SUI_ALIGN_START]);
-			sui_text([0, 80], MENU_TEXT_MEDIUM, hud_toast_string, [1, 1, 0.5], toast_alpha, 0);
-		}
-
 		sui_end();
 	}"""
 
 patch(CLIENT_MAIN, "\t//does what you think it does\n\trenderscene();",
     HUD_ADDITION,
-    "HUD-Block inkl. HIT/KILL + Kill-Streak + Toast nach renderscene() einfügen",
+    "HUD-Block (HIT/KILL + Kill-Streak, OHNE Toast) einfügen",
     "--- NZP-M9 CUSTOM HUD ---")
 
 # ==========================================
-# TEIL 8: POWERUPS.QC – RUNAWAY-LOOP-FIX
+# TEIL 8: POWERUPS.QC – RUNAWAY-LOOP-FIX (robuste Regex)
 # ==========================================
-RUNAWAY_PATTERN = r'(float\s+perk_to_give\s*=\s*0;\s*float\s+found_perk_for_player\s*=\s*false;\s*)while\s*\(\s*!\s*found_perk_for_player\s*\)\s*\{[\s\S]*?if\s*\(\s*perk_to_give\s*!=\s*0\s*\)\s*found_perk_for_player\s*=\s*true;\s*\}'
+RUNAWAY_PATTERN = r'float\s+perk_to_give\s*=\s*0;[\s\S]{0,300}?float\s+found_perk_for_player\s*=\s*false;[\s\S]*?while\s*\(\s*!\s*found_perk_for_player\s*\)\s*\{[\s\S]*?if\s*\(\s*perk_to_give\s*!=\s*0\s*\)\s*found_perk_for_player\s*=\s*true;\s*\}'
 
 RUNAWAY_REPLACEMENT = """float perk_to_give = 0;
 
+		// NZP-M9 FIX: Deterministische, uniforme Auswahl aus den verfuegbaren
+		// Perks. Die frueher verwendete while-Schleife konnte endlos laufen.
 		float num_avail = 0;
 		if (perks_can_give & P_REVIVE) num_avail++;
 		if (perks_can_give & P_JUG) num_avail++;
@@ -603,7 +601,7 @@ RUNAWAY_REPLACEMENT = """float perk_to_give = 0;
 
 patch_regex(POWERUPS_QC, RUNAWAY_PATTERN, RUNAWAY_REPLACEMENT,
     "Powerups: Runaway-Loop deterministisch beheben",
-    "NZP-M9 FIX: Deterministische Perk-Auswahl")
+    "NZP-M9 FIX: Deterministische")
 
 print("\n=== Alle Patches erfolgreich angewendet (idempotent). ===")
 sys.exit(0)
