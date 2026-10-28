@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-# NZP-M9 Patches – vollständig, mit korrigiertem Bein-Dismemberment.
-# Idempotent.
+# NZP-M9 Patches – vollständig automatisiert.
+# Behebt: menu_opts-Array, Max-Ammo-Toast, Bein-Dismemberment,
+# Atmosphäre-Menü, Aim Assist, HUD/Kill-Streak.
+# Idempotent. Keine manuellen Änderungen nötig.
 
 import sys
 import re
@@ -286,7 +288,7 @@ patch(MENU_VIDE,
 patch(MAIN_QC, 'build_datetime = fgets(file);', 'build_datetime = "M9 Pro Custom Build";\n        // build_datetime = fgets(file);', "Version String", "M9 Pro Custom Build")
 
 # ==========================================
-# TEIL 4: CSQC_Init
+# TEIL 4: CSQC_Init + AIM ASSIST
 # ==========================================
 patch(CLIENT_MAIN, "void(float apiver, string enginename, float enginever) CSQC_Init =\n{",
     """void(float apiver, string enginename, float enginever) CSQC_Init =
@@ -308,7 +310,7 @@ patch(CLIENT_MAIN, 'autocvar(in_aimassist, 0);',
     "Aim Assist", 'cvar_set("in_aimassist", "1");')
 
 # ==========================================
-# TEIL 5: POWERUPTOAST
+# TEIL 5: POWERUPTOAST (idempotent)
 # ==========================================
 PARSE_PATTERN = r'(case\s+CSQC_EVENT_BROADCASTMESSAGE\s*:\s*broadcast_type\s*=\s*readbyte\s*\(\s*\)\s*;\s*broadcast_time\s*=\s*time\s*\+\s*5\s*;\s*broadcast_num\s*=\s*readbyte\s*\(\s*\)\s*;\s*break\s*;)'
 PARSE_REPLACEMENT = r'''\1
@@ -455,7 +457,7 @@ HUD_ADDITION = """	CSQC_UpdateAtmosphere();
 patch(CLIENT_MAIN, "\t//does what you think it does\n\trenderscene();", HUD_ADDITION, "HUD", "--- NZP-M9 CUSTOM HUD ---")
 
 # ==========================================
-# TEIL 8: POWERUPS
+# TEIL 8: POWERUPS – Runaway-Fix + Max-Ammo-Toast
 # ==========================================
 RUNAWAY_PATTERN = r'float\s+perk_to_give\s*=\s*0;[\s\S]{0,300}?float\s+found_perk_for_player\s*=\s*false;[\s\S]*?while\s*\(\s*!\s*found_perk_for_player\s*\)\s*\{[\s\S]*?if\s*\(\s*perk_to_give\s*!=\s*0\s*\)\s*found_perk_for_player\s*=\s*true;\s*\}'
 RUNAWAY_REPLACEMENT = """float perk_to_give = 0;
@@ -481,13 +483,19 @@ RUNAWAY_REPLACEMENT = """float perk_to_give = 0;
 		if (perks_can_give & P_MULE)   { if (current == pick) { self.sequence = 8; perk_to_give = P_MULE; }   current++; }"""
 patch_regex(POWERUPS_QC, RUNAWAY_PATTERN, RUNAWAY_REPLACEMENT, "Runaway-Fix", "NZP-M9 FIX: Deterministische")
 
+MAXAMMO_TOAST_ANCHOR = """	if (powerup_id == PU_MAXAMMO && game_modifiers.gameplay.powerups.powerup_max_ammo.show_toast)
+		return game_modifiers.gameplay.powerups.powerup_max_ammo.toast;"""
+MAXAMMO_TOAST_REPLACEMENT = """	// NZP-M9 FIX: Max Ammo Toast deaktivieren (verhindert Netzwerk-Desync-Crash)
+	if (powerup_id == PU_MAXAMMO)
+		return "";"""
+patch(POWERUPS_QC, MAXAMMO_TOAST_ANCHOR, MAXAMMO_TOAST_REPLACEMENT,
+      "Max Ammo Toast deaktivieren", "// NZP-M9 FIX: Max Ammo Toast deaktivieren")
+
 # ==========================================
-# TEIL 9: BEIN-DISMEMBERMENT (KORRIGIERT: eine legs-Entity)
+# TEIL 9: BEIN-DISMEMBERMENT
 # ==========================================
-# Entity-Feld
 ensure_line(SERVER_CUSTOM_QC, ".entity legs;", "legs Entity-Feld")
 
-# Legs in spawnSingleZombEnt
 LEGS_SPAWN_ANCHOR = """	zSpawn.rarm = spawn();
 	zSpawn.rarm.classname = "in_ai_zombie_rarm";
 	zSpawn.rarm.owner = zSpawn;
@@ -500,7 +508,7 @@ LEGS_SPAWN_ANCHOR = """	zSpawn.rarm = spawn();
 #endif // FTE
 """
 LEGS_SPAWN_REPLACEMENT = LEGS_SPAWN_ANCHOR + """
-	// NZP-M9: Einzelne Bein-Entity (MD3 enthält beide Beine)
+	// NZP-M9: Bein-Entity
 	zSpawn.legs = spawn();
 	zSpawn.legs.classname = "in_ai_zombie_legs";
 	zSpawn.legs.owner = zSpawn;
@@ -510,20 +518,18 @@ LEGS_SPAWN_REPLACEMENT = LEGS_SPAWN_ANCHOR + """
 """
 patch(ZOMBIE_CORE_QC, LEGS_SPAWN_ANCHOR, LEGS_SPAWN_REPLACEMENT, "Legs spawn", 'zSpawn.legs = spawn();')
 
-# Legs-Modell + setorigin in spawn_a_zombieB
 LEGS_MODEL_ANCHOR = """	setmodel(szombie.head, "models/ai/zh^.mdl");
 	setmodel(szombie.rarm, "models/ai/zar(.mdl");
 	setmodel(szombie.larm, "models/ai/zal(.mdl");
 """
 LEGS_MODEL_REPLACEMENT = LEGS_MODEL_ANCHOR + """
-	// NZP-M9: Bein-Modell (MD3) – folgt dem Zombie per setorigin
+	// NZP-M9: Bein-Modell (MD3)
 	setmodel(szombie.legs, "models/ai/legs.md3");
 	szombie.legs.scale = LEG_MD3_SCALE;
 	setorigin(szombie.legs, szombie.origin);
 """
 patch(ZOMBIE_CORE_QC, LEGS_MODEL_ANCHOR, LEGS_MODEL_REPLACEMENT, "Legs model", 'setmodel(szombie.legs, "models/ai/legs.md3");')
 
-# LEG_MD3_SCALE #define
 ZOMBIE_SCALE_ANCHOR = "#define ZOMBIE_DAMAGE_THROUGH_WINDOW \t\t60"
 ZOMBIE_SCALE_REPLACEMENT = """#define ZOMBIE_DAMAGE_THROUGH_WINDOW \t\t60
 
@@ -533,14 +539,13 @@ ZOMBIE_SCALE_REPLACEMENT = """#define ZOMBIE_DAMAGE_THROUGH_WINDOW \t\t60
 """
 patch(ZOMBIE_CORE_QC, ZOMBIE_SCALE_ANCHOR, ZOMBIE_SCALE_REPLACEMENT, "LEG_MD3_SCALE", "#define LEG_MD3_SCALE")
 
-# Legs-Hitbox in SetUpHitBoxes
 LEGS_HITBOX_ANCHOR = """	szombie.rarm.solid = SOLID_CORPSE;
 	szombie.rarm.movetype = MOVETYPE_STEP;
 	szombie.rarm.classname = "ai_zombie_rarm";
 	szombie.rarm.takedamage = DAMAGE_YES;
 """
 LEGS_HITBOX_REPLACEMENT = LEGS_HITBOX_ANCHOR + """
-	// NZP-M9: Bein-Hitbox (unterer Teil des Zombies)
+	// NZP-M9: Bein-Hitbox
 	szombie.legs.solid = SOLID_CORPSE;
 	szombie.legs.movetype = MOVETYPE_STEP;
 	szombie.legs.classname = "ai_zombie_legs";
@@ -549,7 +554,6 @@ LEGS_HITBOX_REPLACEMENT = LEGS_HITBOX_ANCHOR + """
 """
 patch(ZOMBIE_CORE_QC, LEGS_HITBOX_ANCHOR, LEGS_HITBOX_REPLACEMENT, "Legs hitbox", 'szombie.legs.solid = SOLID_CORPSE;')
 
-# setorigin in Zombie_Think (Bein-Entity folgt dem Zombie)
 ZOMBIE_THINK_ANCHOR = """void() Zombie_Think = //called every frame for zombies
 {
 	if (Zombie_ProcessDistanceDespawn())
@@ -560,13 +564,12 @@ ZOMBIE_THINK_REPLACEMENT = """void() Zombie_Think = //called every frame for zom
 	if (Zombie_ProcessDistanceDespawn())
 		return;
 
-	// NZP-M9: Bein-Entity dem Zombie folgen lassen
+	// NZP-M9: Bein-Entity folgt dem Zombie
 	if (self.legs)
 		setorigin(self.legs, self.origin);
 """
-patch(ZOMBIE_CORE_QC, ZOMBIE_THINK_ANCHOR, ZOMBIE_THINK_REPLACEMENT, "Legs folgen (Zombie_Think)", "// NZP-M9: Bein-Entity dem Zombie folgen lassen")
+patch(ZOMBIE_CORE_QC, ZOMBIE_THINK_ANCHOR, ZOMBIE_THINK_REPLACEMENT, "Legs folgen", "// NZP-M9: Bein-Entity folgt dem Zombie")
 
-# Legs in removeZombie aufräumen
 LEGS_CLEANUP_ANCHOR = """	if (self.classname != "ai_dog") {
 		setmodel(self.larm,"");
 		setmodel(self.rarm,"");
@@ -609,7 +612,6 @@ LEGS_CLEANUP_REPLACEMENT = """	if (self.classname != "ai_dog") {
 """
 patch(ZOMBIE_CORE_QC, LEGS_CLEANUP_ANCHOR, LEGS_CLEANUP_REPLACEMENT, "Legs cleanup", "if (self.legs) setmodel(self.legs, \"\");")
 
-# Parse_Damage erweitern
 LEGS_DAMAGE_ANCHOR = """			if (body_ent.rarm.washit) {
 				total_dmg += body_ent.rarm.hitamount;
 				body_ent.rarm.health -= body_ent.rarm.hitamount;
@@ -666,7 +668,7 @@ LEGS_DAMAGE_REPLACEMENT = LEGS_DAMAGE_ANCHOR + """
 patch(WEAPON_CORE_QC, LEGS_DAMAGE_ANCHOR, LEGS_DAMAGE_REPLACEMENT, "Legs Parse_Damage", "NZP-M9: Beine (MD3, eine Entity für beide Beine)")
 
 # ==========================================
-# TEIL 10: ATMOSPHERE MENÜ (wie zuvor)
+# TEIL 10: ATMOSPHERE MENÜ
 # ==========================================
 MENU_DEFS_PATTERN = r'(MENU_GAMESETTINGS\s*)\}'
 MENU_DEFS_REPLACEMENT = r'\1, MENU_M9_ATMO }'
@@ -676,7 +678,6 @@ patch(MENU_DEFS, 'void(float wantmode) m_toggle;',
       "Menu_M9_Atmosphere Forward", "void() Menu_M9_Atmosphere;")
 
 if not MENU_M9_ATMO.exists():
-    # (Inhalt wie in der vorherigen Version – aus Platzgründen hier gekürzt, aber funktional identisch)
     MENU_M9_ATMO.write_text(r'''// NZP-M9: Atmosphere & Gore Menü
 string menu_m9_atmo_buttons[9] = {
     "m9_atmo_perf", "m9_atmo_balanced", "m9_atmo_cinematic",
@@ -736,10 +737,19 @@ void() Menu_M9_Atmosphere = {
 };
 ''', encoding="utf-8")
 
+# menu_opts.qc: Array + Button
+patch(MENU_OPTS,
+    'string menu_opts_buttons[6] = {"om_video", "om_audio", "om_binds", "om_acces", "om_console", "om_back"};',
+    'string menu_opts_buttons[7] = {"om_video", "om_audio", "om_binds", "om_acces", "om_m9atmo", "om_console", "om_back"};',
+    "menu_opts_buttons-Array erweitern (behebt übersprungenen Button)",
+    '"om_m9atmo", "om_console"')
+
 patch(MENU_OPTS,
     'Menu_Button(4, "om_acces", "ACCESSIBILITY", "Content, Interface, and Readability options.") ? current_menu = MENU_ACCESSIBILITY : 0;',
     'Menu_Button(4, "om_acces", "ACCESSIBILITY", "Content, Interface, and Readability options.") ? current_menu = MENU_ACCESSIBILITY : 0;\n    Menu_Button(5, "om_m9atmo", "ATMOSPHERE & GORE", "Fog, particles and gore options.") ? current_menu = MENU_M9_ATMO : 0;',
-    "Atmo-Button", '"om_m9atmo"')
+    "Atmo-Button einfügen",
+    '"om_m9atmo"')
+
 patch(MENU_OPTS, 'Menu_DrawDivider(5);', 'Menu_DrawDivider(6);', "Divider", 'Menu_DrawDivider(6);')
 patch(MENU_OPTS, 'Menu_Button(5.25, "om_console"', 'Menu_Button(6.25, "om_console"', "Console-Button", 'Menu_Button(6.25, "om_console"')
 
