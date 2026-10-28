@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-# NZP-M9 Patches – vollständig automatisiert inkl. Crawler-Transformation.
-# Idempotent.
+# NZP-M9 Patches – QuakeC (HUD, Gore/Atmosphäre-Menü, Navigation, Powerup-Fixes)
+# Idempotent. Stellt sicher, dass das Atmosphere & Gore Menü sichtbar und
+# auswählbar ist, und behebt die serverseitigen Crash-Ursachen.
 
 import sys
 import re
@@ -63,7 +64,7 @@ ZOMBIE_CORE_QC = SERVER / "ai/zombie_core.qc"
 WEAPON_CORE_QC = SERVER / "weapons/weapon_core.qc"
 
 # ==========================================
-# TEIL 0: BASIS
+# TEIL 0: BASIS & CUSTOM.QC
 # ==========================================
 ensure_line(FTE_QC, ".float is_in_menu;", "is_in_menu")
 ensure_line(FTE_QC, "void(string soundname, float channel, float volume) localsound_enhanced = { localsound(soundname, channel, volume); };", "localsound_enhanced")
@@ -141,7 +142,7 @@ patch(MENU_COOP,
     "Gamepad-Hinweis", "D-Pad UP/DOWN to scroll servers")
 
 # ==========================================
-# TEIL 2: SUI_SYS.QC
+# TEIL 2: SUI_SYS.QC (Navigation & A/B-SWAP)
 # ==========================================
 SUI_FORWARD_ANCHOR = "void() _sui_menukey_downarrow ="
 SUI_FORWARD_REPLACEMENT = """// NZP-M9: Forward-Deklarationen
@@ -183,7 +184,7 @@ AB_REPLACEMENT = r'''\1
 patch_regex(SUI_SYS, AB_PATTERN, AB_REPLACEMENT, "A/B-Swap", "// NZP-M9: A = Zurueck")
 
 # ==========================================
-# TEIL 3: VIDEO-MENÜ (Apply/Back nach unten)
+# TEIL 3: VIDEO-MENÜ
 # ==========================================
 if MENU_VIDE.exists():
     content = MENU_VIDE.read_text(encoding="utf-8")
@@ -199,6 +200,79 @@ float current_ultrawide; float current_particles; float current_decals;
 float current_dynlight; float current_shadows; float current_bob; float current_filter;''',
                          content, count=1, flags=re.DOTALL)
     MENU_VIDE.write_text(content, encoding="utf-8")
+    print("[OK]   Video-Array")
+
+if 'current_decals = cvar("nzp_decals");' not in MENU_VIDE.read_text(encoding="utf-8"):
+    content = MENU_VIDE.read_text(encoding="utf-8")
+    new_content, count = re.subn(r"void\(\) Menu_Video_StoreCurrentSettings =\s*\{.*?\}",
+    '''void() Menu_Video_StoreCurrentSettings =
+{
+    current_fullscreen = cvar("vid_fullscreen");
+    current_showfps = cvar("show_fps");
+    current_vsync = cvar("vid_vsync");
+    current_ultrawide = cvar("vid_ultrawide_limiter");
+    current_particles = cvar("nzp_particles");
+    current_decals = cvar("nzp_decals");
+    current_dynlight = cvar("r_dynamic");
+    current_shadows = cvar("r_shadows");
+    current_bob = (cvar("cl_bobup") > 0);
+    current_filter = (substring(strtoupper(cvar_string("gl_texturemode")), 0, 10) == "GL_NEAREST");
+}''', content, count=1, flags=re.DOTALL)
+    if count >= 1:
+        MENU_VIDE.write_text(new_content, encoding="utf-8")
+        print("[OK]   StoreSettings")
+
+if "Menu_Video_UpdateDynLight" not in MENU_VIDE.read_text(encoding="utf-8"):
+    patch(MENU_VIDE, "void() Menu_Video_UpdateUltrawide =", '''void() Menu_Video_UpdateDecals = { Menu_PlaySound(MENU_SND_ENTER); current_decals = !current_decals; cvar_set("nzp_decals", ftos(current_decals)); };
+void() Menu_Video_UpdateDynLight = { Menu_PlaySound(MENU_SND_ENTER); current_dynlight = !current_dynlight; cvar_set("r_dynamic", ftos(current_dynlight)); };
+void() Menu_Video_UpdateShadows = { Menu_PlaySound(MENU_SND_ENTER); current_shadows = !current_shadows; cvar_set("r_shadows", ftos(current_shadows)); };
+void() Menu_Video_UpdateBob = { Menu_PlaySound(MENU_SND_ENTER); current_bob = !current_bob; cvar_set("cl_bobup", current_bob ? "0.02" : "0"); cvar_set("cl_bobside", current_bob ? "0.02" : "0"); };
+void() Menu_Video_UpdateUltrawide =''', "Update-Funktionen", "Menu_Video_UpdateDynLight")
+
+if "vm_decal" not in MENU_VIDE.read_text(encoding="utf-8"):
+    menu_video_function = '''
+void() Menu_Video =
+{
+    if (!menu_video_init) Menu_Video_Init();
+    Menu_DrawBackground(); Menu_DrawTitle("VIDEO OPTIONS"); Menu_DrawMapPanel();
+    Menu_Button(1, "vm_resol", "RESOLUTION", "Window size adjustment.") ? Menu_Video_UpdateVideoMode() : 0;
+    if (current_selected_vidmode > menu_video_modes) current_selected_vidmode = 0;
+    Menu_DrawOptionValue(1, sprintf("%dx%d (%d:%d)", video_modes[current_selected_vidmode].size[0], video_modes[current_selected_vidmode].size[1], video_modes[current_selected_vidmode].ratio[0], video_modes[current_selected_vidmode].ratio[1]));
+    Menu_Button(2, "vm_fulls", "FULLSCREEN", "Change Fullscreen Mode.") ? Menu_Video_UpdateFullscreen() : 0;
+    Menu_DrawOptionValue(2, (current_fullscreen == 0) ? "DISABLED" : (current_fullscreen == 1) ? "ENABLED" : "BORDERLESS");
+    Menu_Button(3, "vm_shfps", "SHOW FPS", "Toggles display of FPS Values.") ? Menu_Video_UpdateShowFPS() : 0;
+    Menu_DrawOptionValue(3, (current_showfps == 0) ? "DISABLED" : (current_showfps == 1) ? "ENABLED" : "VERBOSE");
+    Menu_Button(4, "vm_maxps", "MAX FPS", "Configure Maximum FPS Value.") ? 0 : 0;
+    Menu_CvarSlider(4, "vm_maxps", [10, 500, 490], "cl_maxfps", true, false, false);
+    Menu_Button(5, "vm_vsync", "VSYNC", "Sync Framerate with Display.") ? Menu_Video_UpdateVsync() : 0;
+    Menu_DrawOptionValue(5, current_vsync ? "ENABLED" : "DISABLED");
+    Menu_Button(6, "vm_fov", "FIELD OF VIEW", "Change Camera Field of View.") ? 0 : 0;
+    Menu_CvarSlider(6, "vm_fov", [10, 150, 140], "fov", true, false, false);
+    Menu_Button(7, "vm_gamma", "GAMMA", "Adjust game Black Level.") ? 0 : 0;
+    Menu_CvarSlider(7, "vm_gamma", [0.3, 2, 17], "gamma", false, true, false);
+    Menu_Button(8, "vm_uwide", "ULTRAWIDE MODE", "Condenses HUD closer to center of Display.") ? Menu_Video_UpdateUltrawide() : 0;
+    Menu_DrawOptionValue(8, current_ultrawide ? "ENABLED" : "DISABLED");
+    Menu_Button(9, "vm_parts", "PARTICLES", "Toggle Particle Effects for Performance.") ? Menu_Video_UpdateParticles() : 0;
+    Menu_DrawOptionValue(9, current_particles ? "ENABLED" : "DISABLED");
+    Menu_Button(10, "vm_decal", "DECALS", "Toggle Bullet Holes and Blood.") ? Menu_Video_UpdateDecals() : 0;
+    Menu_DrawOptionValue(10, current_decals ? "ENABLED" : "DISABLED");
+    Menu_Button(11, "vm_dynlgt", "DYNAMIC LIGHTS", "Toggle Realtime Lights.") ? Menu_Video_UpdateDynLight() : 0;
+    Menu_DrawOptionValue(11, current_dynlight ? "ENABLED" : "DISABLED");
+    Menu_Button(12, "vm_shdw", "SHADOWS", "Toggle Entity Shadows.") ? Menu_Video_UpdateShadows() : 0;
+    Menu_DrawOptionValue(12, current_shadows ? "ENABLED" : "DISABLED");
+    Menu_Button(13, "vm_bob", "WEAPON BOB", "Toggle Weapon Swaying.") ? Menu_Video_UpdateBob() : 0;
+    Menu_DrawOptionValue(13, current_bob ? "ENABLED" : "DISABLED");
+    Menu_Button(14, "vm_filtr", "TEXTURE FILTERING", "Choose 3D Environment Filtering Mode.") ? Menu_Video_UpdateFiltering() : 0;
+    Menu_DrawOptionValue(14, current_filter ? "NEAREST" : "LINEAR");
+    Menu_Button(-2, "vm_apply", "APPLY", "Save & Apply Settings.") ? Menu_Video_ApplySettings() : 0;
+    Menu_Button(-1, "vm_back", "BACK", "Return to Configuration Menu.") ? current_menu = MENU_OPTIONS : 0;
+    sui_pop_frame();	
+};'''
+    content = MENU_VIDE.read_text(encoding="utf-8")
+    new_content, count = re.subn(r"void\(\) Menu_Video\s*=\s*\{.*?\n\};", menu_video_function, content, count=1, flags=re.DOTALL)
+    if count >= 1:
+        MENU_VIDE.write_text(new_content, encoding="utf-8")
+        print("[OK]   Menu_Video")
 
 patch(MENU_VIDE,
     """    Menu_DrawDivider(14.25);
@@ -211,7 +285,7 @@ patch(MENU_VIDE,
 patch(MAIN_QC, 'build_datetime = fgets(file);', 'build_datetime = "M9 Pro Custom Build";\n        // build_datetime = fgets(file);', "Version String", "M9 Pro Custom Build")
 
 # ==========================================
-# TEIL 4: CSQC_Init + AIM ASSIST
+# TEIL 4: CLIENT_MAIN – INITIALISIERUNG & POWERUPTOAST
 # ==========================================
 patch(CLIENT_MAIN, "void(float apiver, string enginename, float enginever) CSQC_Init =\n{",
     """void(float apiver, string enginename, float enginever) CSQC_Init =
@@ -232,9 +306,6 @@ patch(CLIENT_MAIN, 'autocvar(in_aimassist, 0);',
     'autocvar(in_aimassist, 1);\n\tcvar_set("in_aimassist", "1");',
     "Aim Assist", 'cvar_set("in_aimassist", "1");')
 
-# ==========================================
-# TEIL 5: POWERUPTOAST
-# ==========================================
 PARSE_PATTERN = r'(case\s+CSQC_EVENT_BROADCASTMESSAGE\s*:\s*broadcast_type\s*=\s*readbyte\s*\(\s*\)\s*;\s*broadcast_time\s*=\s*time\s*\+\s*5\s*;\s*broadcast_num\s*=\s*readbyte\s*\(\s*\)\s*;\s*break\s*;)'
 PARSE_REPLACEMENT = r'''\1
 		case CSQC_EVENT_POWERUPTOAST:
@@ -245,7 +316,7 @@ PARSE_REPLACEMENT = r'''\1
 patch_regex(CLIENT_MAIN, PARSE_PATTERN, PARSE_REPLACEMENT, "POWERUPTOAST", "case CSQC_EVENT_POWERUPTOAST:")
 
 # ==========================================
-# TEIL 6: ATMOSPHÄRE
+# TEIL 5: ATMOSPHÄRE & HUD
 # ==========================================
 ATMO_FUNCS = """
 float() CSQC_IsIndoor =
@@ -286,9 +357,6 @@ patch(CLIENT_MAIN, "noref void(float width, float height, float menushown) CSQC_
     ATMO_FUNCS + "noref void(float width, float height, float menushown) CSQC_UpdateView =",
     "Atmosphäre-Funktionen", "float() CSQC_IsIndoor =")
 
-# ==========================================
-# TEIL 7: HUD (OHNE Toast)
-# ==========================================
 HUD_ADDITION = """	CSQC_UpdateAtmosphere();
 	renderscene();
 
@@ -380,7 +448,7 @@ HUD_ADDITION = """	CSQC_UpdateAtmosphere();
 patch(CLIENT_MAIN, "\t//does what you think it does\n\trenderscene();", HUD_ADDITION, "HUD", "--- NZP-M9 CUSTOM HUD ---")
 
 # ==========================================
-# TEIL 8: POWERUPS
+# TEIL 6: POWERUPS (Runaway-Loop & Max-Ammo-Toast)
 # ==========================================
 RUNAWAY_PATTERN = r'float\s+perk_to_give\s*=\s*0;[\s\S]{0,300}?float\s+found_perk_for_player\s*=\s*false;[\s\S]*?while\s*\(\s*!\s*found_perk_for_player\s*\)\s*\{[\s\S]*?if\s*\(\s*perk_to_give\s*!=\s*0\s*\)\s*found_perk_for_player\s*=\s*true;\s*\}'
 RUNAWAY_REPLACEMENT = """float perk_to_give = 0;
@@ -415,9 +483,8 @@ patch(POWERUPS_QC, MAXAMMO_TOAST_ANCHOR, MAXAMMO_TOAST_REPLACEMENT,
       "Max Ammo Toast deaktivieren", "// NZP-M9 FIX: Max Ammo Toast deaktivieren")
 
 # ==========================================
-# TEIL 9: BEIN-DISMEMBERMENT + CRAWLER-TRANSFORMATION
+# TEIL 7: BEIN-DISMEMBERMENT (Crawler-Transformation)
 # ==========================================
-# makeCrawler Forward-Deklaration in weapon_core.qc
 MAKECRAWLER_FWD_ANCHOR = """void() W_PutOut;
 float(entity who, float weapon) Zombie_HeadCanGib;"""
 MAKECRAWLER_FWD_REPLACEMENT = """void() W_PutOut;
@@ -426,10 +493,8 @@ void(entity who) makeCrawler;"""
 patch(WEAPON_CORE_QC, MAKECRAWLER_FWD_ANCHOR, MAKECRAWLER_FWD_REPLACEMENT,
       "makeCrawler Forward-Deklaration", "void(entity who) makeCrawler;")
 
-# Legs Entity-Feld
 ensure_line(SERVER_CUSTOM_QC, ".entity legs;", "legs Entity-Feld")
 
-# Legs spawn (nur Hitbox, kein Modell - zfull.mdl zeigt Beine)
 LEGS_SPAWN_ANCHOR = """	zSpawn.rarm = spawn();
 	zSpawn.rarm.classname = "in_ai_zombie_rarm";
 	zSpawn.rarm.owner = zSpawn;
@@ -442,7 +507,7 @@ LEGS_SPAWN_ANCHOR = """	zSpawn.rarm = spawn();
 #endif // FTE
 """
 LEGS_SPAWN_REPLACEMENT = LEGS_SPAWN_ANCHOR + """
-	// NZP-M9: Bein-Entity (unsichtbare Hitbox)
+	// NZP-M9: Bein-Entity
 	zSpawn.legs = spawn();
 	zSpawn.legs.classname = "in_ai_zombie_legs";
 	zSpawn.legs.owner = zSpawn;
@@ -452,14 +517,13 @@ LEGS_SPAWN_REPLACEMENT = LEGS_SPAWN_ANCHOR + """
 """
 patch(ZOMBIE_CORE_QC, LEGS_SPAWN_ANCHOR, LEGS_SPAWN_REPLACEMENT, "Legs spawn", 'zSpawn.legs = spawn();')
 
-# Legs: kein Modell rendern, nur Hitbox
 LEGS_HITBOX_ANCHOR = """	szombie.rarm.solid = SOLID_CORPSE;
 	szombie.rarm.movetype = MOVETYPE_STEP;
 	szombie.rarm.classname = "ai_zombie_rarm";
 	szombie.rarm.takedamage = DAMAGE_YES;
 """
 LEGS_HITBOX_REPLACEMENT = LEGS_HITBOX_ANCHOR + """
-	// NZP-M9: Bein-Hitbox (unsichtbar, keine Renderung)
+	// NZP-M9: Bein-Hitbox (unsichtbar)
 	szombie.legs.solid = SOLID_CORPSE;
 	szombie.legs.movetype = MOVETYPE_STEP;
 	szombie.legs.classname = "ai_zombie_legs";
@@ -468,7 +532,6 @@ LEGS_HITBOX_REPLACEMENT = LEGS_HITBOX_ANCHOR + """
 """
 patch(ZOMBIE_CORE_QC, LEGS_HITBOX_ANCHOR, LEGS_HITBOX_REPLACEMENT, "Legs hitbox", 'szombie.legs.solid = SOLID_CORPSE;')
 
-# Legs folgen dem Zombie
 ZOMBIE_THINK_ANCHOR = """void() Zombie_Think = //called every frame for zombies
 {
 	if (Zombie_ProcessDistanceDespawn())
@@ -485,7 +548,6 @@ ZOMBIE_THINK_REPLACEMENT = """void() Zombie_Think = //called every frame for zom
 """
 patch(ZOMBIE_CORE_QC, ZOMBIE_THINK_ANCHOR, ZOMBIE_THINK_REPLACEMENT, "Legs folgen", "// NZP-M9: Bein-Hitbox dem Zombie folgen lassen")
 
-# Legs cleanup in removeZombie
 LEGS_CLEANUP_ANCHOR = """	if (self.classname != "ai_dog") {
 		setmodel(self.larm,"");
 		setmodel(self.rarm,"");
@@ -528,7 +590,6 @@ LEGS_CLEANUP_REPLACEMENT = """	if (self.classname != "ai_dog") {
 """
 patch(ZOMBIE_CORE_QC, LEGS_CLEANUP_ANCHOR, LEGS_CLEANUP_REPLACEMENT, "Legs cleanup", "if (self.legs) setmodel(self.legs, \"\");")
 
-# Parse_Damage: Bein-Gib + makeCrawler
 LEGS_DAMAGE_ANCHOR = """			if (body_ent.rarm.washit) {
 				total_dmg += body_ent.rarm.hitamount;
 				body_ent.rarm.health -= body_ent.rarm.hitamount;
@@ -590,8 +651,9 @@ LEGS_DAMAGE_REPLACEMENT = LEGS_DAMAGE_ANCHOR + """
 patch(WEAPON_CORE_QC, LEGS_DAMAGE_ANCHOR, LEGS_DAMAGE_REPLACEMENT, "Legs Parse_Damage + Crawler", "NZP-M9: Beine (Hitbox-only) - Gib + Crawler-Transformation")
 
 # ==========================================
-# TEIL 10: ATMOSPHERE MENÜ
+# TEIL 8: GORE/ATMOSPHÄRE-MENÜ (MENU_M9_ATMO)
 # ==========================================
+# 8.1 Enum erweitern
 MENU_DEFS_PATTERN = r'(MENU_GAMESETTINGS\s*)\}'
 MENU_DEFS_REPLACEMENT = r'\1, MENU_M9_ATMO }'
 patch_regex(MENU_DEFS, MENU_DEFS_PATTERN, MENU_DEFS_REPLACEMENT, "MENU_M9_ATMO", "MENU_M9_ATMO")
@@ -599,6 +661,7 @@ patch(MENU_DEFS, 'void(float wantmode) m_toggle;',
       'void(float wantmode) m_toggle;\nvoid() Menu_M9_Atmosphere;',
       "Menu_M9_Atmosphere Forward", "void() Menu_M9_Atmosphere;")
 
+# 8.2 menu_m9_atmo.qc erstellen
 if not MENU_M9_ATMO.exists():
     MENU_M9_ATMO.write_text(r'''// NZP-M9: Atmosphere & Gore Menü
 string menu_m9_atmo_buttons[9] = {
@@ -659,7 +722,7 @@ void() Menu_M9_Atmosphere = {
 };
 ''', encoding="utf-8")
 
-# menu_opts.qc: Array + Button
+# 8.3 menu_opts.qc: Array + Button (fortlaufende Order!)
 patch(MENU_OPTS,
     'string menu_opts_buttons[6] = {"om_video", "om_audio", "om_binds", "om_acces", "om_console", "om_back"};',
     'string menu_opts_buttons[7] = {"om_video", "om_audio", "om_binds", "om_acces", "om_m9atmo", "om_console", "om_back"};',
@@ -675,6 +738,7 @@ patch(MENU_OPTS,
 patch(MENU_OPTS, 'Menu_DrawDivider(5);', 'Menu_DrawDivider(6);', "Divider", 'Menu_DrawDivider(6);')
 patch(MENU_OPTS, 'Menu_Button(5.25, "om_console"', 'Menu_Button(6.25, "om_console"', "Console-Button", 'Menu_Button(6.25, "om_console"')
 
+# 8.4 In .src-Dateien einbinden
 for src_path in [PROGS / "menu.src", PROGS / "csqc.src"]:
     if src_path.exists():
         content = src_path.read_text(encoding="utf-8")
