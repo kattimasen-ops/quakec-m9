@@ -3,7 +3,7 @@ import sys
 import os
 
 def main():
-    # 1. Add-on aktivieren (todashuta-Fork: Modulname bleibt io_scene_md3)
+    # 1. Add-on aktivieren
     try:
         bpy.ops.preferences.addon_enable(module="io_scene_md3")
         print("MD3 Add-on aktiviert.")
@@ -57,24 +57,31 @@ def main():
 
 
 def export_md3(obj, filepath):
-    """Exportiert ein Objekt als MD3 mit korrektem Kontext."""
+    """Exportiert ein Objekt als MD3. Blendet alle anderen Objekte aus."""
+    # Alle Objekte unsichtbar machen
+    for o in bpy.context.scene.objects:
+        o.hide_set(True)
+
+    # Nur das Zielobjekt sichtbar machen
+    obj.hide_set(False)
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
 
+    # Korrekter Operator: export_scene.md3 (nicht id3_md3)
     with bpy.context.temp_override(active_object=obj, selected_objects=[obj]):
         try:
-            bpy.ops.export_scene.id3_md3(
+            bpy.ops.export_scene.md3(
                 filepath=filepath,
-                preset="MATERIALS",
-                only_selected=True,
-                limits="STUPID",
-                start_frame=0,
-                end_frame=0,
-                individual=False
+                enable_convert=False,      # Original-Skalierung beibehalten
+                adjust_scale_bug=False     # Keine 1.016-Korrektur
             )
             print(f"OK: {filepath} exportiert.")
         except Exception as e:
             print(f"FEHLER beim Export von {filepath}: {e}")
+
+    # Sichtbarkeit wiederherstellen
+    for o in bpy.context.scene.objects:
+        o.hide_set(False)
 
 
 if __name__ == "__main__":
