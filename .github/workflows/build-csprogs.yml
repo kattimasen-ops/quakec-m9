@@ -20,34 +20,110 @@ jobs:
 
       - name: Apply Patches
         run: |
-          python3 scripts/apply_nzp_m9_patches.py
+          python3 scripts/apply_nzp_m9_patches.py | tee patch_output.log
+
+      - name: Collect Patched Source Files
+        run: |
+          set -euo pipefail
+          mkdir -p patched_source
+
+          # Relevante Dateien für Gore/Atmosphäre-Menü und Max-Ammo-Bug
+          FILES=(
+            "source/client/main.qc"
+            "source/client/defs/custom.qc"
+            "source/client/defs/fte.qc"
+            "source/menu/main.qc"
+            "source/menu/menu_opts.qc"
+            "source/menu/menu_m9_atmo.qc"
+            "source/menu/menu_coop.qc"
+            "source/menu/menu_vide.qc"
+            "source/menu/sui_sys.qc"
+            "source/menu/defs/menu_defs.qc"
+            "source/server/entities/powerups.qc"
+            "source/server/weapons/weapon_core.qc"
+            "source/server/ai/zombie_core.qc"
+            "source/server/defs/custom.qc"
+          )
+
+          for f in "${FILES[@]}"; do
+            if [ -f "$f" ]; then
+              mkdir -p "patched_source/$(dirname "$f")"
+              cp "$f" "patched_source/$f"
+            else
+              echo "[WARN] Datei nicht gefunden: $f"
+            fi
+          done
+
+          # Kompletter source/-Ordner als Backup
+          tar -czf patched_source_full.tar.gz source/
+
+          echo "=== Gepatchte Dateien ==="
+          find patched_source -type f | sort
 
       - name: Compile QuakeC
         run: |
           chmod +x bin/fteqcc-cli-lin
           mkdir -p build/fte
-          
+
           echo "=== Generiere Hash-Tabelle ==="
           python3 bin/qc_hash_generator.py -i tools/asset_conversion_table.csv -o source/server/hash_table.qc
-          
+
           echo "=== Kompiliere Client (CSQC) ==="
           bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/csqc.src
-          
+
           echo "=== Kompiliere Menu ==="
           bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/menu.src
-          
+
+          echo "=== Kompiliere Server (Progs) ==="
+          if [ -f progs/ssqc.src ]; then
+            bin/fteqcc-cli-lin -O3 -Ono-compound_jumps -Wall -srcfile progs/ssqc.src
+          else
+            echo "[WARN] progs/ssqc.src nicht gefunden - Server-Progs werden NICHT neu kompiliert!"
+            echo "[WARN] Das bedeutet: PU_MaxAmmo- und Parse_Damage-Fixes sind NICHT wirksam."
+          fi
+
           echo "=== Verschiebe fertige Dateien ==="
           cp build/fte/csprogs.dat csprogs.dat
           cp build/fte/menu.dat menu.dat
-          
-          echo "=== Ergebnis ==="
-          ls -la csprogs.dat menu.dat
+          if [ -f build/fte/progs.dat ]; then cp build/fte/progs.dat progs.dat; fi
 
-      - name: Upload Dat Files
+          echo "=== Ergebnis ==="
+          ls -la csprogs.dat menu.dat 2>/dev/null || true
+          ls -la progs.dat 2>/dev/null || true
+
+      - name: Stage MD3 Models (if present)
+        run: |
+          set -euo pipefail
+          mkdir -p artifact
+          if [ -d "assets/models/ai" ]; then
+            cp -r assets/models/ai/*.md3 artifact/ 2>/dev/null || true
+            echo "MD3-Dateien kopiert:"
+            ls -la artifact/ 2>/dev/null || true
+          fi
+
+      - name: Upload Compiled Dat Files
         uses: actions/upload-artifact@v4
         with:
-          name: nzp-patched-files
+          name: nzp-patched-dat-files
           path: |
             csprogs.dat
             menu.dat
+            progs.dat
+            artifact/*.md3
+          if-no-files-found: warn
+
+      - name: Upload Patched Source Files (for review)
+        uses: actions/upload-artifact@v4
+        with:
+          name: nzp-patched-source-files
+          path: |
+            patched_source/
+            patch_output.log
           if-no-files-found: error
+
+      - name: Upload Full Source Backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: nzp-patched-source-full
+          path: patched_source_full.tar.gz
+          if-no-files-found: warn
