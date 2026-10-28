@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # NZP-M9 Patches – QuakeC (HUD, Gore/Atmosphäre-Menü, Navigation, Powerup-Fixes)
 # Idempotent. Stellt sicher, dass das Atmosphere & Gore Menü sichtbar und
-# auswählbar ist, und behebt die serverseitigen Crash-Ursachen.
+# auswählbar ist, behebt überlappende Buttons im Video-Menü und
+# die serverseitigen Crash-Ursachen.
 
 import sys
 import re
@@ -148,32 +149,39 @@ SUI_FORWARD_ANCHOR = "void() _sui_menukey_downarrow ="
 SUI_FORWARD_REPLACEMENT = """// NZP-M9: Forward-Deklarationen
 string(string cur, float direction) Menu_Coop_Browse_Navigate;
 float() Menu_Coop_Browse_EnterContainer;
+string(string prev_id) Menu_M9_Atmo_GetNextButton;
+string(string next_id) Menu_M9_Atmo_GetPreviousButton;
 
 void() _sui_menukey_downarrow ="""
 patch(SUI_SYS, SUI_FORWARD_ANCHOR, SUI_FORWARD_REPLACEMENT, "SUI Forward", "Forward-Deklarationen")
 
+# Downarrow: MENU_M9_ATMO Case
 DOWNARROW_PATTERN = r'(void\s*\(\s*\)\s*_sui_menukey_downarrow\s*=\s*\{[\s\S]*?string\s+current_hovered_option\s*=\s*_hover_actions\s*\[\s*0\s*\]\s*;)'
 DOWNARROW_REPLACEMENT = r'''\1
 	if (current_menu == MENU_COOPBROWSE) {
 		string nav = Menu_Coop_Browse_Navigate(current_hovered_option, 1);
 		if (nav != "") { _hover_actions[0] = nav; last_hovered_id = ""; _hover_action_count = 1; return; }
+	}
+	if (current_menu == MENU_M9_ATMO) {
+		_hover_actions[0] = Menu_M9_Atmo_GetNextButton(current_hovered_option);
+		_hover_action_count = 1;
+		return;
 	}'''
-patch_regex(SUI_SYS, DOWNARROW_PATTERN, DOWNARROW_REPLACEMENT, "Downarrow", "Menu_Coop_Browse_Navigate(current_hovered_option, 1)")
+patch_regex(SUI_SYS, DOWNARROW_PATTERN, DOWNARROW_REPLACEMENT, "Downarrow M9-ATMO", "Menu_M9_Atmo_GetNextButton(current_hovered_option)")
 
+# Uparrow: MENU_M9_ATMO Case
 UPARROW_PATTERN = r'(void\s*\(\s*\)\s*_sui_menukey_uparrow\s*=\s*\{[\s\S]*?string\s+current_hovered_option\s*=\s*_hover_actions\s*\[\s*0\s*\]\s*;)'
 UPARROW_REPLACEMENT = r'''\1
 	if (current_menu == MENU_COOPBROWSE) {
 		string nav = Menu_Coop_Browse_Navigate(current_hovered_option, -1);
 		if (nav != "") { _hover_actions[0] = nav; last_hovered_id = ""; _hover_action_count = 1; return; }
+	}
+	if (current_menu == MENU_M9_ATMO) {
+		_hover_actions[0] = Menu_M9_Atmo_GetPreviousButton(current_hovered_option);
+		_hover_action_count = 1;
+		return;
 	}'''
-patch_regex(SUI_SYS, UPARROW_PATTERN, UPARROW_REPLACEMENT, "Uparrow", "Menu_Coop_Browse_Navigate(current_hovered_option, -1)")
-
-ENTER_PATTERN = r'(void\s*\(\s*\)\s*_sui_menukey_enter\s*=\s*\{[\s\S]*?if\s*\(\s*_hover_actions\s*\[\s*0\s*\]\s*==\s*""\s*\)[\s\S]*?_sui_menukey_downarrow\s*\(\s*\)\s*;)'
-ENTER_REPLACEMENT = r'''\1
-	if (current_menu == MENU_COOPBROWSE && _hover_actions[0] == "cbm_serverlist") {
-		if (Menu_Coop_Browse_EnterContainer()) _hover_actions[0] = "cbm_serverlistscrl0";
-	}'''
-patch_regex(SUI_SYS, ENTER_PATTERN, ENTER_REPLACEMENT, "Enter", "Menu_Coop_Browse_EnterContainer())")
+patch_regex(SUI_SYS, UPARROW_PATTERN, UPARROW_REPLACEMENT, "Uparrow M9-ATMO", "Menu_M9_Atmo_GetPreviousButton(current_hovered_option)")
 
 AB_PATTERN = r'(float\s*\(\s*float\s+evtype\s*,\s*float\s+scanx\s*,\s*float\s+chary\s*,\s*float\s+devid\s*\)\s*sui_input_event\s*=\s*\{)'
 AB_REPLACEMENT = r'''\1
@@ -184,7 +192,7 @@ AB_REPLACEMENT = r'''\1
 patch_regex(SUI_SYS, AB_PATTERN, AB_REPLACEMENT, "A/B-Swap", "// NZP-M9: A = Zurueck")
 
 # ==========================================
-# TEIL 3: VIDEO-MENÜ
+# TEIL 3: VIDEO-MENÜ (Überlappung der Apply/Back-Buttons beheben)
 # ==========================================
 if MENU_VIDE.exists():
     content = MENU_VIDE.read_text(encoding="utf-8")
@@ -264,23 +272,23 @@ void() Menu_Video =
     Menu_DrawOptionValue(13, current_bob ? "ENABLED" : "DISABLED");
     Menu_Button(14, "vm_filtr", "TEXTURE FILTERING", "Choose 3D Environment Filtering Mode.") ? Menu_Video_UpdateFiltering() : 0;
     Menu_DrawOptionValue(14, current_filter ? "NEAREST" : "LINEAR");
-    Menu_Button(-2, "vm_apply", "APPLY", "Save & Apply Settings.") ? Menu_Video_ApplySettings() : 0;
-    Menu_Button(-1, "vm_back", "BACK", "Return to Configuration Menu.") ? current_menu = MENU_OPTIONS : 0;
+    Menu_Button(15, "vm_apply", "APPLY", "Save & Apply Settings.") ? Menu_Video_ApplySettings() : 0;
+    Menu_Button(16, "vm_back", "BACK", "Return to Configuration Menu.") ? current_menu = MENU_OPTIONS : 0;
     sui_pop_frame();	
 };'''
     content = MENU_VIDE.read_text(encoding="utf-8")
     new_content, count = re.subn(r"void\(\) Menu_Video\s*=\s*\{.*?\n\};", menu_video_function, content, count=1, flags=re.DOTALL)
     if count >= 1:
         MENU_VIDE.write_text(new_content, encoding="utf-8")
-        print("[OK]   Menu_Video")
+        print("[OK]   Menu_Video (Apply/Back korrekt positioniert)")
 
+# Falls das Menü bereits gepatcht wurde, aber noch die alten Koordinaten (-2/-1) hat:
 patch(MENU_VIDE,
-    """    Menu_DrawDivider(14.25);
-    Menu_Button(15, "vm_apply", "APPLY", "Save & Apply Settings.") ? Menu_Video_ApplySettings() : 0;
-    Menu_Button(16, "vm_back", "BACK", "Return to Configuration Menu.") ? current_menu = MENU_OPTIONS : 0;""",
     """    Menu_Button(-2, "vm_apply", "APPLY", "Save & Apply Settings.") ? Menu_Video_ApplySettings() : 0;
     Menu_Button(-1, "vm_back", "BACK", "Return to Configuration Menu.") ? current_menu = MENU_OPTIONS : 0;""",
-    "Apply/Back nach unten", 'Menu_Button(-2, "vm_apply"')
+    """    Menu_Button(15, "vm_apply", "APPLY", "Save & Apply Settings.") ? Menu_Video_ApplySettings() : 0;
+    Menu_Button(16, "vm_back", "BACK", "Return to Configuration Menu.") ? current_menu = MENU_OPTIONS : 0;""",
+    "Apply/Back Koordinaten korrigiert", 'Menu_Button(15, "vm_apply"')
 
 patch(MAIN_QC, 'build_datetime = fgets(file);', 'build_datetime = "M9 Pro Custom Build";\n        // build_datetime = fgets(file);', "Version String", "M9 Pro Custom Build")
 
@@ -658,7 +666,7 @@ MENU_DEFS_PATTERN = r'(MENU_GAMESETTINGS\s*)\}'
 MENU_DEFS_REPLACEMENT = r'\1, MENU_M9_ATMO }'
 patch_regex(MENU_DEFS, MENU_DEFS_PATTERN, MENU_DEFS_REPLACEMENT, "MENU_M9_ATMO", "MENU_M9_ATMO")
 patch(MENU_DEFS, 'void(float wantmode) m_toggle;',
-      'void(float wantmode) m_toggle;\nvoid() Menu_M9_Atmosphere;',
+      'void(float wantmode) m_toggle;\nvoid() Menu_M9_Atmosphere;\nstring(string prev_id) Menu_M9_Atmo_GetNextButton;\nstring(string next_id) Menu_M9_Atmo_GetPreviousButton;',
       "Menu_M9_Atmosphere Forward", "void() Menu_M9_Atmosphere;")
 
 # 8.2 menu_m9_atmo.qc erstellen
