@@ -37,20 +37,24 @@ jobs:
           echo "Teste Blender..."
           /opt/blender/blender --version
 
-      - name: Install MD3 Export Add-on
+      - name: Download and Install MD3 Export Add-on
         run: |
           set -euo pipefail
-          git clone --depth 1 https://github.com/neumond/blender-md3.git /tmp/blender-md3
+          echo "Lade neumond/blender-md3 herunter..."
+          wget -q "https://github.com/neumond/blender-md3/archive/refs/heads/master.zip" -O /tmp/blender-md3.zip
+          unzip -q /tmp/blender-md3.zip -d /tmp/
+          rm /tmp/blender-md3.zip
+
           ADDON_DIR="$HOME/.config/blender/4.5/scripts/addons"
           mkdir -p "$ADDON_DIR"
-          cp -r /tmp/blender-md3/io_scene_md3 "$ADDON_DIR/"
+          cp -r /tmp/blender-md3-master/io_scene_md3 "$ADDON_DIR/"
           echo "Add-on installiert in: $ADDON_DIR"
+          ls -la "$ADDON_DIR/io_scene_md3"
 
       - name: Prepare Output Directory
         run: |
           set -euo pipefail
           mkdir -p "${{ github.workspace }}/output_models"
-          echo "Ausgabeordner: ${{ github.workspace }}/output_models"
 
       - name: Run Blender Python Script
         run: |
